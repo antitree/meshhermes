@@ -169,6 +169,39 @@ the radio itself:
 ```
 
 
+## More documentation
+
+The README covers getting running. The details live alongside it:
+
+| Document | What's in it |
+|---|---|
+| [SECURITY.md](SECURITY.md) | Threat model, what's in and out of scope, how to report a vulnerability, and operator security notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, running the tests without hardware, and the non-obvious traps in this codebase |
+| [ROADMAP.md](ROADMAP.md) | BLE and MQTT transports, proactive alerts, and other unbuilt work |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+
+A few things worth knowing before you deploy:
+
+- **Access control is Hermes-native.** `dm_policy` and `group_policy` are
+  enforced by the gateway's own authorization layer and pairing store, not
+  reimplemented here. `dm_policy: open` requires an explicit `"*"` in
+  `allow_from` so a radio is never opened by a config typo.
+- **Node IDs are not authenticated** and channel traffic is readable by anyone
+  holding the channel key. An allowlist raises the bar; it is not identity.
+- **Positions are real people's coordinates.** They are never logged, are
+  rounded to ~11 m in tool output, and can be suppressed entirely with
+  `MESHTASTIC_EXPOSE_POSITION=false`.
+- **BLE and MQTT are not supported yet** — configuring them fails at validation
+  with a clear error rather than silently doing nothing.
+- **A serial port cannot be shared.** If another program holds your radio, or
+  ModemManager probes it on Linux, Hermes cannot open it.
+
+Run the hardware check before trusting a deployment:
+
+```bash
+python scripts/smoke_hardware.py --transport serial --port /dev/ttyUSB0
+```
+
 ## Acknowledgements
 
 **Inspired by [MeshClaw](https://github.com/Seeed-Solution/MeshClaw)** by
