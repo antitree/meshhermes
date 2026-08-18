@@ -55,8 +55,19 @@ jobs:
       - name: Verify versions agree across the three places they appear
         run: |
           python - <<'PY'
-          import re, pathlib, tomllib, yaml
-          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          import re, pathlib, yaml
+          try:
+              import tomllib  # 3.11+
+          except ModuleNotFoundError:
+              # 3.10 has no tomllib; the version line is simple enough to read
+              # directly rather than pull in a tomli dependency just for CI.
+              tomllib = None
+          text = pathlib.Path("pyproject.toml").read_text()
+          if tomllib is not None:
+              pyproject = tomllib.loads(text)
+          else:
+              m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+              pyproject = {"project": {"version": m.group(1)}}
           manifest = yaml.safe_load(pathlib.Path("plugin.yaml").read_text())
           init = pathlib.Path("__init__.py").read_text()
           init_version = re.search(r'__version__\s*=\s*"([^"]+)"', init).group(1)
