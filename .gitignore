@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/
+
+# Credentials and runtime state — never commit.
+# auth.json holds live OAuth tokens when this plugin is exercised against a
+# real Hermes install; a stray copy in the repo would publish them.
+auth.json
+*auth.json
+.env
+.env.*
+!.env.example
+data/
+*.pem
+*.key
+id_rsa*
+
+# Transient review handoffs — not part of the published repo.
+SECURITY_FINDINGS_*.md

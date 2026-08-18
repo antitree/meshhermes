@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meshhermes"
+version = "1.0.0"
+description = "Meshtastic LoRa mesh platform plugin for Hermes Agent"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "MeshHermes contributors" }]
+keywords = ["meshtastic", "lora", "mesh", "hermes", "hermes-agent", "radio"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Ham Radio",
+]
+dependencies = [
+    "meshtastic>=2.3.0",
+    "pypubsub>=4.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-asyncio>=0.23"]
+
+[project.urls]
+Homepage = "https://github.com/antitree/meshhermes"
+Issues = "https://github.com/antitree/meshhermes/issues"
+
+# Hermes discovers pip-installed plugins through this entry-point group.
+[project.entry-points."hermes_agent.plugins"]
+meshtastic-platform = "meshhermes"
+
+[tool.setuptools]
+# The plugin loads as a package rooted at the plugin directory, so the
+# modules live at the repo root rather than in a src/ package.
+py-modules = [
+    "adapter",
+    "chunking",
+    "nodedb",
+    "normalize",
+    "policy",
+    "schemas",
+    "setup_wizard",
+    "mesh_tools",
+    "transport",
+]
+
+[tool.pytest.ini_options]
+# Collect only from tests/ — the repo root's __init__.py is a Hermes plugin
+# entry point that uses relative imports and must not be imported directly.
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# importlib mode keeps pytest from treating the repo root as an importable
+# package.  The root __init__.py is the Hermes plugin entry point and uses
+# relative imports, so importing it standalone raises ImportError.
+addopts = "--import-mode=importlib"
+filterwarnings = ["ignore::DeprecationWarning"]

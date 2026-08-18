@@ -1,0 +1,36 @@
+# Run:  pip install pre-commit && pre-commit install
+#
+# The secret-detection hooks matter most here: this plugin is developed
+# against a live Hermes install whose auth.json holds real OAuth tokens.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: no-credential-files
+        name: block credential files
+        entry: >-
+          bash -c 'for f in "$@"; do
+            case "$f" in
+              *auth.json|*.pem|*.key|.env|.env.*)
+                echo "BLOCKED: $f looks like a credential file"; exit 1;;
+            esac
+          done' --
+        language: system
+        pass_filenames: true

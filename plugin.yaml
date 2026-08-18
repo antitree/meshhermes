@@ -1,0 +1,47 @@
+name: meshtastic-platform
+label: Meshtastic
+kind: platform
+version: 1.0.0
+description: >
+  Meshtastic LoRa mesh gateway adapter for Hermes Agent.
+  Relays messages between a Meshtastic radio (serial/USB or TCP/WiFi) and
+  the Hermes agent, and exposes read-only mesh telemetry tools.
+author: MeshHermes contributors
+requires_env:
+  - name: MESHTASTIC_TRANSPORT
+    description: "How to reach the radio: 'serial' (USB) or 'tcp' (WiFi)"
+    prompt: "Transport (serial/tcp)"
+    password: false
+optional_env:
+  - name: MESHTASTIC_SERIAL_PORT
+    description: "Serial device path (e.g. /dev/ttyUSB0). Leave empty to autodetect a single attached radio."
+    prompt: "Serial port"
+    password: false
+  - name: MESHTASTIC_TCP_HOST
+    description: "Radio hostname or IP for TCP/WiFi (e.g. meshtastic.local)"
+    prompt: "TCP host"
+    password: false
+  - name: MESHTASTIC_NODE_NAME
+    description: "Mention trigger on channels. Defaults to the device's own longName."
+    prompt: "Bot node name"
+    password: false
+  - name: MESHTASTIC_ALLOWED_USERS
+    description: "Comma-separated node IDs allowed to talk to the bot (e.g. !aabbccdd)"
+    prompt: "Allowed node IDs"
+    password: false
+  - name: MESHTASTIC_ALLOW_ALL_USERS
+    description: "Allow any node on the mesh to command the bot (dev only)"
+    prompt: "Allow all nodes? (true/false)"
+    password: false
+  - name: MESHTASTIC_HOME_CHANNEL
+    description: "Channel or node ID for cron / notification delivery (e.g. channel:LongFast)"
+    prompt: "Home channel"
+    password: false
+  - name: MESHTASTIC_AUTO_INSTALL
+    description: "Install the meshtastic package automatically on connect if missing (default false)"
+    prompt: "Auto-install the meshtastic package? (true/false)"
+    password: false
+  - name: MESHTASTIC_EXPOSE_POSITION
+    description: "Include GPS positions in tool output (default true; positions are always rounded)"
+    prompt: "Expose node positions? (true/false)"
+    password: false
