@@ -66,6 +66,27 @@ def _saved_env(get_env_value) -> dict:
 
     return {rule.name: (get_env_value(rule.name) or "") for rule in ENV_RULES}
 
+def print_meshtastic_logo():
+    green = "\033[38;2;99;226;148m"
+    reset = "\033[0m"
+
+    art = [
+        "       ###        ###",
+        "      ###        #####",
+        "     ###        ### ###",
+        "    ###        ###   ###",
+        "   ###        ###     ###",
+        "  ###        ###       ###",
+        " ###        ###         ###",
+        "###        ###           ###",
+        "##        ###             ##",
+    ]
+
+    logo = []
+    for line in art:
+        logo.append(f"{green}{line}{reset}")
+    return logo
+
 
 def interactive_setup() -> None:
     """Prompt for Meshtastic settings and save them to ``~/.hermes/.env``."""
@@ -206,6 +227,9 @@ def interactive_setup() -> None:
         return
 
     print()
+    meshtastic_logo = print_meshtastic_logo()
+    for l in meshtastic_logo:
+        print_info(l)
     print_success("Meshtastic configuration saved to ~/.hermes/.env")
     print_warning(
         "Before transmitting, make sure your radio's LoRa region is set: "
