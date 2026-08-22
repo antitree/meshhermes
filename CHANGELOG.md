@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Loop prevention for bots sharing a channel with `require_mention: false`.
+  Two Hermes bots on one channel would otherwise answer each other forever,
+  burning shared and legally regulated airtime. Three independent controls,
+  each sufficient on its own:
+  - **Conversation cooldown** (on, 60s, `MESHTASTIC_CONVERSATION_COOLDOWN_SECONDS`):
+    after replying on a channel the bot stays quiet there for the cooldown.
+    Applies to *all* replies including mentions; `MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS`
+    (default off) relaxes that. `0` or negative disables the control.
+  - **Loop-signature detection** (off, `MESHTASTIC_LOOP_DETECTION`): refuses
+    to answer text already seen on that channel. Keys on `(channel,
+    case-and-whitespace-normalized text)` — deliberately not the sender,
+    since the two bots in a loop are different senders saying the same
+    thing. Cache bounded by TTL (`MESHTASTIC_LOOP_SIGNATURE_TTL_SECONDS`,
+    600s) and a hard entry cap (`MESHTASTIC_LOOP_SIGNATURE_MAX_ENTRIES`, 256).
+  - **Hard rate limit**, now configurable via `MESHTASTIC_RATE_LIMIT_MAX_SENDS`
+    (5) and `MESHTASTIC_RATE_LIMIT_WINDOW_SECONDS` (60). Defaults unchanged.
+
+  Suppressed replies are dropped silently and logged at INFO with the control
+  that fired — nothing is sent on-channel, since an error message is itself
+  airtime and something the other bot could reply to.
+- `tests/fake_mesh.py` grows a `SharedAir`: several fake radios on one
+  channel, where each transmission is delivered to the others. This makes
+  the two-bot runaway reproducible in a test, with a transmission budget so
+  a regression fails loudly instead of hanging the suite.
 - `CONTRIBUTING.md`, `SECURITY.md`, and this changelog.
 - Pre-commit configuration with secret detection, and `.gitignore` rules
   blocking credential files.
@@ -19,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `allow_update_command=True` is now passed explicitly at registration.
 - A test asserting every `register_platform` kwarg is a real
   `PlatformEntry` field.
+
+### Fixed
+- `adapter.send()` — the gateway's own reply path — did not call the shared
+  rate limit, despite `sendpolicy`'s docstring promising all three outbound
+  paths share one gate. The busiest path was uncapped.
+- `mesh_tools.py` aliased `RATE_LIMIT_MAX_SENDS` / `RATE_LIMIT_WINDOW_SECONDS`
+  by value at import time. With the limits now operator-configurable that
+  would have frozen whatever the environment said at first import, and made
+  the tool's error messages quote a limit the gate was not applying.
 
 ### Changed
 - Test fixtures use a neutral channel name instead of one from the author's

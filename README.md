@@ -85,6 +85,17 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
 | `MESHTASTIC_EXPOSE_POSITION` | no | default `true`; `false` hides GPS in tool output |
 | `MESHTASTIC_AUTO_INSTALL` | no | default `false`; `true` pip-installs `meshtastic` on connect if missing |
+| `MESHTASTIC_CONVERSATION_COOLDOWN_SECONDS` | no | default `60`; quiet period per channel after the bot replies. `0` or negative disables it |
+| `MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS` | no | default `false`; `true` lets a message that names the bot skip the cooldown |
+| `MESHTASTIC_LOOP_DETECTION` | no | default `false`; `true` refuses to answer the same text twice on a channel |
+| `MESHTASTIC_LOOP_SIGNATURE_TTL_SECONDS` | no | default `600`; how long a message signature is remembered |
+| `MESHTASTIC_LOOP_SIGNATURE_MAX_ENTRIES` | no | default `256`; hard cap on the signature cache |
+| `MESHTASTIC_RATE_LIMIT_MAX_SENDS` | no | default `5`; hard cap on transmissions per window, across every send path |
+| `MESHTASTIC_RATE_LIMIT_WINDOW_SECONDS` | no | default `60`; the rate-limit window |
+
+Invalid values for any of these (non-numeric, zero, negative where that makes no
+sense) fall back to the default with a warning in the log. A typo never turns a
+limit off.
 
 ---
 
@@ -167,6 +178,45 @@ the radio itself:
   repeater-north (28%, 3.7V). Everything else
   is above 60%.
 ```
+
+### Running more than one bot on a channel
+
+Setting `require_mention: false` makes the bot answer everything on a channel.
+Two bots configured that way on the same channel will answer *each other* —
+each reply wakes the other, forever. Airtime is shared and legally regulated,
+so a runaway transmitter is a real problem, not just noise.
+
+Three controls bound this. Each one stops the runaway on its own, so turning
+one off does not disarm the others:
+
+| Control | Default | What it does |
+|---|---|---|
+| Conversation cooldown | **on**, 60s | After replying on a channel, the bot stays quiet on that channel for the cooldown |
+| Loop-signature detection | **off** | When on, refuses to answer text it has already seen on that channel |
+| Hard rate limit | **on**, 5 sends / 60s | Caps transmissions across *every* send path — replies, `mesh_send`, and cron |
+
+The cooldown is the one doing the work by default, and it is deliberately
+strict: it applies to **all** replies on the channel, including messages that
+mention the bot by name. That means a human who addresses the bot inside the
+window is silently ignored. The trade is intentional — two bots that address
+each other by name would otherwise ping-pong straight through a
+mention-exempt cooldown. If you want the looser behaviour, set
+`MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS=true`.
+
+Suppressed replies are dropped silently and logged at INFO, naming which
+control fired. Nothing is sent on-channel to explain the drop: that would be
+more airtime, and an error message is itself something the other bot could
+reply to.
+
+Loop-signature detection is off by default because it keys on `(channel,
+normalized text)` and not on the sender — which is what makes it work against
+two bots saying the same thing, but also means a second human repeating a
+phrase gets ignored. Turn it on when you actually have bots sharing a channel.
+The cache is bounded by both a TTL and a hard entry cap, so it cannot grow
+without limit in a long-running gateway.
+
+If you run two bots in one process they share this state, so they behave as a
+single bot for cooldown purposes. Separate processes each keep their own.
 
 
 ## More documentation
