@@ -215,9 +215,14 @@ class TestManifest:
         assert registered.platforms[0]["emoji"] == manifest["icon"]
 
     def test_manifest_still_parses_with_the_icon_key(self, manifest):
-        """A guard that the added key did not break the document."""
+        """A guard that the added key did not break the document.
+
+        The name is asserted by test_manifest_name_matches_runtime_registration,
+        which owns that rule and checks it against the runtime registration.
+        Re-asserting it here is what let this guard go stale across the rename.
+        """
         assert manifest["kind"] == "platform"
-        assert manifest["name"] == "meshtastic-platform"
+        assert manifest["name"]
 
     def test_every_env_entry_is_fully_described(self, manifest):
         for key in ("requires_env", "optional_env"):
