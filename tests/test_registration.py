@@ -6,6 +6,7 @@ determines whether it loads at all.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -148,8 +149,25 @@ class TestManifest:
         # Anything else and the gateway will not load it as a platform.
         assert manifest["kind"] == "platform"
 
-    def test_name_follows_ecosystem_convention(self, manifest):
-        assert manifest["name"] == "meshtastic-platform"
+    def test_manifest_name_matches_runtime_registration(self, manifest, registered):
+        # The manifest and ctx.register_platform() must agree.  They did not
+        # historically — the manifest said "meshtastic-platform" while the
+        # runtime registered "meshtastic" — and the runtime name is the one
+        # Hermes routes `platforms: meshtastic:` config on.
+        assert manifest["name"] == "meshtastic"
+        assert manifest["name"] == registered.platforms[0]["name"]
+
+    def test_manifest_label_matches_runtime_registration(self, manifest, registered):
+        assert manifest["label"] == "Meshtastic"
+        assert manifest["label"] == registered.platforms[0]["label"]
+
+    def test_entry_point_name_is_left_unrenamed(self):
+        # Deliberately NOT "meshtastic": this identifier is what existing
+        # installs carry in ~/.hermes/config.yaml under `plugins: enabled:`,
+        # so renaming it would strand them.  A bare `meshtastic` directory on
+        # sys.path would also shadow the pip package adapter.py imports.
+        text = (PLUGIN_ROOT / "pyproject.toml").read_text()
+        assert 'meshtastic-platform = "meshhermes"' in text
 
     def test_declares_no_mandatory_install_prompts(self, manifest):
         """The install must ask nothing.
@@ -208,6 +226,50 @@ class TestManifest:
 
     def test_entry_point_exists(self):
         assert (PLUGIN_ROOT / "__init__.py").exists()
+
+
+class TestVersionConsistency:
+    """The version is declared in three files that nothing keeps in sync.
+
+    A drifting version is invisible until a release is cut with the wrong
+    number, so assert the three agree rather than trusting a release
+    checklist.  CI runs the equivalent check; having it here means a local
+    `pytest` catches the drift before the push.
+    """
+
+    @staticmethod
+    def _pyproject_version() -> str:
+        text = (PLUGIN_ROOT / "pyproject.toml").read_text()
+        m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+        assert m, "no version in pyproject.toml"
+        return m.group(1)
+
+    @staticmethod
+    def _manifest_version() -> str:
+        manifest = yaml.safe_load((PLUGIN_ROOT / "plugin.yaml").read_text())
+        return str(manifest["version"])
+
+    @staticmethod
+    def _init_version() -> str:
+        text = (PLUGIN_ROOT / "__init__.py").read_text()
+        m = re.search(r'__version__\s*=\s*"([^"]+)"', text)
+        assert m, "no __version__ in __init__.py"
+        return m.group(1)
+
+    def test_all_three_declarations_agree(self):
+        versions = {
+            "pyproject.toml": self._pyproject_version(),
+            "plugin.yaml": self._manifest_version(),
+            "__init__.py": self._init_version(),
+        }
+        assert len(set(versions.values())) == 1, f"version mismatch: {versions}"
+
+    def test_version_is_a_semver_triple(self):
+        assert re.fullmatch(r"\d+\.\d+\.\d+", self._pyproject_version())
+
+    def test_changelog_documents_the_current_version(self):
+        changelog = (PLUGIN_ROOT / "CHANGELOG.md").read_text()
+        assert f"## [{self._pyproject_version()}]" in changelog
 
 
 class TestEnvEnablement:

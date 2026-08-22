@@ -79,6 +79,12 @@ plugins:
     - meshtastic-platform
 ```
 
+The directory and the `plugins: enabled:` entry are `meshtastic-platform`,
+while the platform itself is `meshtastic` (that is the name used under
+`platforms:` below). The directory keeps the suffix on purpose: a directory
+named `meshtastic` on `sys.path` would shadow the `meshtastic` pip package
+this plugin imports.
+
 Then configure it — the wizard, or the equivalent values in `~/.hermes/.env`:
 
 ```bash

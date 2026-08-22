@@ -48,7 +48,8 @@ jobs:
           import yaml
           m = yaml.safe_load(open("plugin.yaml"))
           assert m["kind"] == "platform", m
-          assert m["name"] == "meshtastic-platform", m
+          # Must match ctx.register_platform(name=...) in adapter.py.
+          assert m["name"] == "meshtastic", m
           print("plugin.yaml OK:", m["name"], m["version"])
           PY
 
