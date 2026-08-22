@@ -110,8 +110,8 @@ def _build_interface(
         if not tcp_host:
             raise TransportError(
                 "tcp transport requires a host — set MESHTASTIC_TCP_HOST "
-                "(e.g. meshtastic.local) in ~/.hermes/.env, or run: "
-                "hermes gateway setup"
+                "(e.g. meshtastic.local) in ~/.hermes/.env, or reconfigure "
+                "with: hermes gateway setup"
             )
         # portNumber is keyword-only on TCPInterface and defaults to 4403;
         # pass it explicitly so a radio behind a tunnel or reverse proxy is

@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PlatformEntry` field.
 
 ### Changed
+- README documents the install flow that actually happens: `hermes plugins
+  install` prompts for the required variables and then asks you to restart
+  the gateway. `hermes gateway setup` was presented as a required
+  configuration step, which no longer matched the install — it is now
+  documented as the reconfigure path, and as the step a *manual* install
+  needs because it never sees the prompts.
+- Every message naming `hermes gateway setup` now says "reconfigure with",
+  so a missing-variable error cannot be read as "your install is
+  incomplete, run the wizard".
 - `MESHTASTIC_ALLOW_ALL_USERS` must now be set explicitly at install time.
   Left unset it either silently opened the bot to every node in radio range
   or left it unable to answer anyone, with no indication which. An empty

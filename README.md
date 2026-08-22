@@ -26,14 +26,47 @@ Installs into `~/.hermes/plugins/` and needs **zero changes to Hermes core**.
 ```bash
 hermes plugins install antitree/meshhermes
 pip install meshtastic
+# answer the prompts
+hermes gateway restart
 ```
 
 `hermes plugins install` clones the repo into `~/.hermes/plugins/` and offers to
 enable it. Third-party platform plugins are opt-in, so it stays off until you
 say yes (or pass `--enable`).
 
+The install prompts for the settings the plugin cannot run without —
+`meshtastic-platform requires the following environment variables` — and writes
+your answers to `~/.hermes/.env`:
+
+| Setting | Answer |
+|---|---|
+| `MESHTASTIC_TRANSPORT` | `serial` for a USB radio, `tcp` for one on WiFi |
+| `MESHTASTIC_ALLOW_ALL_USERS` | `false` unless you mean to let every node in radio range command the bot |
+| `MESHTASTIC_TCP_HOST` | the radio's hostname or IP, e.g. `meshtastic.local`. Needed only for `tcp` — leave it blank for `serial`. |
+
+Then restart the gateway and it is running. There is no separate configuration
+step: everything else has a working default.
+
+A value already present in `~/.hermes/.env` is not asked for again, so writing
+those settings there ahead of time makes the install non-interactive.
+
+To change any of it later, or to reach the settings the install does not ask
+about — access-control detail, position privacy, the home channel for cron — run
+the wizard:
+
+```bash
+hermes gateway setup      # choose Meshtastic
+hermes gateway restart
+```
+
+The full list of settings is in [Environment variables](#environment-variables)
+below; the wizard covers the same ground interactively.
+
 <details>
 <summary>Manual install</summary>
+
+A manual install never sees the install prompts, so it needs the configuration
+step the plugin install does for you.
 
 ```bash
 git clone https://github.com/antitree/meshhermes \
@@ -48,16 +81,19 @@ plugins:
   enabled:
     - meshtastic-platform
 ```
-</details>
 
-## Configure
-
-Run the wizard, or write the config by hand:
+Then configure it — the wizard, or the equivalent values in `~/.hermes/.env`:
 
 ```bash
 hermes gateway setup      # choose Meshtastic
 hermes gateway restart
 ```
+</details>
+
+## Configuration
+
+The install collects what is mandatory. This section is the reference for the
+rest, and for writing the configuration by hand.
 
 ### Minimal working config
 
@@ -89,9 +125,10 @@ Environment variables take precedence over `config.yaml`.
 
 The required variables are checked before an install completes, so a
 configuration that cannot reach the radio is refused up front rather than
-failing later at connect time. Anything marked optional above is safe to
-leave unset — each has a working default. Setting the values in
-`~/.hermes/.env` satisfies the checks without any prompting.
+failing later at connect time — that check is what the install prompts satisfy.
+Anything marked optional above is safe to leave unset: each has a working
+default. Values already in `~/.hermes/.env` satisfy the checks without any
+prompting.
 
 ---
 
