@@ -7,7 +7,7 @@
 name: meshtastic
 label: Meshtastic
 kind: platform
-version: 1.0.7
+version: 1.0.8
 icon: "🐰"
 description: >
   Meshtastic LoRa mesh gateway adapter for Hermes Agent.
