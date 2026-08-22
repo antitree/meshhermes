@@ -23,7 +23,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from gateway.config import Platform
 from gateway.platforms.base import (
@@ -195,15 +195,25 @@ class MeshtasticAdapter(BasePlatformAdapter):
         except ValueError:
             return None
 
-    def _mention_name(self) -> Optional[str]:
-        """The name that triggers a mention on a channel.
+    def _mention_names(self) -> Tuple[Optional[str], Optional[str], Tuple[Optional[str], ...]]:
+        """Every name that addresses this bot on a channel.
 
-        Configured ``node_name`` wins; otherwise the device's own
-        ``longName``, read (never written) from the radio.
+        Returns ``(primary, short_name, extra_names)``.  Configured
+        ``node_name`` is the primary trigger, but the device's real
+        ``longName``/``shortName`` stay triggers too: an operator who sets a
+        custom trigger word almost certainly still expects someone typing
+        the radio's actual name to reach the bot.  All read, never written.
         """
+        device_long, device_short = (
+            tp.get_my_names(self._iface) if self._iface is not None else (None, None)
+        )
         if self.node_name:
-            return self.node_name
-        return tp.get_my_long_name(self._iface) if self._iface is not None else None
+            return self.node_name, device_short, (device_long,)
+        return device_long, device_short, ()
+
+    def _mention_name(self) -> Optional[str]:
+        """The primary mention trigger (back-compat accessor)."""
+        return self._mention_names()[0]
 
     def _resolve_channel_name(self, index: Any) -> Optional[str]:
         """Map a packet's channel index to its configured name."""
@@ -482,14 +492,19 @@ class MeshtasticAdapter(BasePlatformAdapter):
             user = node_record.get("user") or {}
             user_name = user.get("longName") or user.get("shortName") or from_id
 
-            mention_name = self._mention_name()
+            mention_name, mention_short, mention_extra = self._mention_names()
 
             if is_direct:
                 chat_id = from_id
                 chat_name = user_name
                 chat_type = "dm"
                 gate = resolve_mention_gate(
-                    text, mention_name, require_mention=False, is_direct=True
+                    text,
+                    mention_name,
+                    require_mention=False,
+                    is_direct=True,
+                    short_name=mention_short,
+                    extra_names=mention_extra,
                 )
             else:
                 channel_index = packet.get("channel", 0)
@@ -512,6 +527,8 @@ class MeshtasticAdapter(BasePlatformAdapter):
                     require_mention=require_mention,
                     is_direct=False,
                     is_authorized_command=False,
+                    short_name=mention_short,
+                    extra_names=mention_extra,
                 )
 
             if not gate.allowed:

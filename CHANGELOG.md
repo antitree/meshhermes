@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking
+- **Mention matching is leading-position only.** A mid-sentence `@name`
+  no longer counts as addressing the bot ("tell @hermes I said hi" is
+  conversation *about* the bot, not an instruction *to* it). Deployments
+  that relied on the old mid-sentence fallback must move the name to the
+  start of the message.
+
+### Changed
+- **Mention gating now matches how Meshtastic actually works.** There is no
+  tagging protocol on a mesh channel - people address a node by typing its
+  name first. The old IRC-style patterns required `@name` or `name:`/`name,`,
+  so a bare `Long Name of Node tell me the weather` fell through the gate
+  entirely. The unified matcher accepts the name at the start of the
+  message, case-insensitive, with an optional leading `@` and optional
+  trailing `:`/`,`/whitespace. The IRC forms still work as a consequence of
+  that rule rather than as separately maintained patterns.
+- **The radio's `shortName` is a mention trigger too**, guarded against
+  false wakes: a short name is ignored when it is empty, under
+  `MIN_SHORT_NAME_LENGTH` (3) characters, or a common word listed in
+  `SHORT_NAME_STOPWORDS`.
+- **A configured `MESHTASTIC_NODE_NAME` no longer hides the radio's real
+  name.** The custom trigger is primary, but the device's own
+  `longName`/`shortName` still reach the bot.
+
 ### Added
 - `envcheck.py`: one declarative rule set for which `MESHTASTIC_*` variables
   are mandatory, including conditional ones. `plugin.yaml`'s schema cannot

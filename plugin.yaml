@@ -39,7 +39,7 @@ optional_env:
     prompt: "Allowed node IDs"
     password: false
   - name: MESHTASTIC_NODE_NAME
-    description: "Mention trigger on channels. Defaults to the device's own longName."
+    description: "Mention trigger typed at the start of a message (@ optional). The device's own longName/shortName also trigger. Defaults to the device's longName."
     prompt: "Bot node name"
     password: false
   - name: MESHTASTIC_HOME_CHANNEL
