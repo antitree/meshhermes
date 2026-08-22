@@ -21,14 +21,12 @@ from typing import List
 # adapter so the wizard cannot drift from what is actually enforced.
 try:
     from .envcheck import (
-        DEFAULT_TCP_PORT,
         SUPPORTED_TRANSPORTS,
         UNSUPPORTED_TRANSPORTS,
         validate_env,
     )
 except ImportError:  # pragma: no cover - direct-import context
     from envcheck import (  # type: ignore[no-redef]
-        DEFAULT_TCP_PORT,
         SUPPORTED_TRANSPORTS,
         UNSUPPORTED_TRANSPORTS,
         validate_env,
@@ -112,25 +110,33 @@ def interactive_setup() -> None:
         )
         save_env_value("MESHTASTIC_SERIAL_PORT", (serial_port or "").strip())
     else:
-        tcp_host = prompt(
-            "Radio hostname or IP (e.g. meshtastic.local)",
-            default=get_env_value("MESHTASTIC_TCP_HOST") or "",
-        )
-        if not tcp_host:
-            print_warning("A host is required for tcp transport — skipping Meshtastic setup")
-            return
-        save_env_value("MESHTASTIC_TCP_HOST", tcp_host.strip())
+        # The host (mandatory for tcp) and the port (optional, pre-filled
+        # with 4403) come from the shared prompter rather than being asked
+        # again here.  Same rules, same questions, one implementation — the
+        # generic installer calls into exactly this code, so the wizard and
+        # a plain ``hermes plugins install`` cannot drift apart.
+        try:
+            from .install_prompt import MissingConfiguration, prompt_for_missing
+        except ImportError:  # pragma: no cover - direct-import context
+            from install_prompt import (  # type: ignore[no-redef]
+                MissingConfiguration,
+                prompt_for_missing,
+            )
 
-        # Optional — a stock radio listens on 4403.  Prompted anyway
-        # because a radio behind an SSH tunnel or reverse proxy is not on
-        # the default port, and that is invisible until nothing connects.
-        tcp_port = prompt(
-            "Radio TCP port",
-            default=get_env_value("MESHTASTIC_TCP_PORT") or str(DEFAULT_TCP_PORT),
-        )
-        save_env_value(
-            "MESHTASTIC_TCP_PORT", (tcp_port or "").strip() or str(DEFAULT_TCP_PORT)
-        )
+        try:
+            prompt_for_missing(
+                {
+                    "MESHTASTIC_TRANSPORT": transport,
+                    "MESHTASTIC_TCP_HOST": get_env_value("MESHTASTIC_TCP_HOST") or "",
+                    "MESHTASTIC_TCP_PORT": get_env_value("MESHTASTIC_TCP_PORT") or "",
+                },
+                prompt_fn=prompt,
+                save_fn=save_env_value,
+                notify=print_warning,
+            )
+        except MissingConfiguration as e:
+            print_warning(str(e))
+            return
 
     # ── Identity ──────────────────────────────────────────────────────────
     print()

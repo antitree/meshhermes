@@ -42,7 +42,8 @@ your answers to `~/.hermes/.env`:
 |---|---|
 | `MESHTASTIC_TRANSPORT` | `serial` for a USB radio, `tcp` for one on WiFi |
 | `MESHTASTIC_ALLOW_ALL_USERS` | `false` unless you mean to let every node in radio range command the bot |
-| `MESHTASTIC_TCP_HOST` | the radio's hostname or IP, e.g. `meshtastic.local`. Needed only for `tcp` — leave it blank for `serial`. |
+| `MESHTASTIC_TCP_HOST` | the radio's hostname or IP, e.g. `meshtastic.local`. Asked only after you answer `tcp`, and required then; never asked for `serial`. |
+| `MESHTASTIC_TCP_PORT` | asked only after you answer `tcp`, pre-filled with `4403` — press enter unless the radio is behind a tunnel or reverse proxy |
 
 Then restart the gateway and it is running. There is no separate configuration
 step: everything else has a working default.
@@ -114,8 +115,8 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_TRANSPORT` | yes | `serial` or `tcp` |
 | `MESHTASTIC_ALLOW_ALL_USERS` | yes | must be set explicitly: `true` opens the bot to every node in range (dev only), **inbound and outbound**; `false` restricts it to `MESHTASTIC_ALLOWED_USERS` |
 | `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs. Empty is valid — pair a node later. |
-| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. Install and connect both fail without it when `MESHTASTIC_TRANSPORT=tcp`. |
-| `MESHTASTIC_TCP_PORT` | no | default `4403`; set it when the radio is behind a tunnel or reverse proxy |
+| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. Asked for during a tcp install; install and connect both fail without it when `MESHTASTIC_TRANSPORT=tcp`. |
+| `MESHTASTIC_TCP_PORT` | no | default `4403`, offered pre-filled during a tcp install; change it when the radio is behind a tunnel or reverse proxy |
 | `MESHTASTIC_SERIAL_PORT` | no | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
 | `MESHTASTIC_NODE_NAME` | no | mention trigger; defaults to the device's `longName` |
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
@@ -125,9 +126,16 @@ Environment variables take precedence over `config.yaml`.
 The required variables are checked before an install completes, so a
 configuration that cannot reach the radio is refused up front rather than
 failing later at connect time — that check is what the install prompts satisfy.
-Anything marked optional above is safe to leave unset: each has a working
-default. Values already in `~/.hermes/.env` satisfy the checks without any
-prompting.
+Choosing `tcp` prompts for the radio's hostname or IP, which is mandatory and
+re-asked until it is given, and then for the TCP port, pre-filled with `4403`
+so pressing enter keeps the standard value. Choosing `serial` asks neither
+question. Anything marked optional above is safe to leave unset: each has a
+working default. Values already in `~/.hermes/.env` satisfy the checks without
+any prompting.
+
+In a non-interactive install (piped stdin, CI, `--yes`) there is nobody to ask,
+so a missing `MESHTASTIC_TCP_HOST` fails immediately with the exact line to add
+to `~/.hermes/.env` rather than waiting on input.
 
 ---
 

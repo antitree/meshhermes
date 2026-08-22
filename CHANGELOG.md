@@ -32,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `longName`/`shortName` still reach the bot.
 
 ### Added
+- `install_prompt.py`: the install now asks for the network settings that
+  the transport answer makes necessary. Hermes prompts for `plugin.yaml`'s
+  `requires_env` and not for `optional_env`, so answering `tcp` to the
+  transport question left the hostname and port unasked — the install
+  completed and the radio was unreachable. Choosing `tcp` now prompts for
+  the hostname or IP (mandatory, re-asked until given) and then for the
+  port, pre-filled with `4403` so enter keeps the default. Choosing
+  `serial` asks neither. Values already in `~/.hermes/.env` are never
+  re-prompted, and a non-interactive install fails with the exact `.env`
+  line to add rather than blocking on input. The questions are derived from
+  `envcheck.ENV_RULES`, and the setup wizard's tcp steps now call the same
+  code rather than asking a second time.
 - `envcheck.py`: one declarative rule set for which `MESHTASTIC_*` variables
   are mandatory, including conditional ones. `plugin.yaml`'s schema cannot
   say "required only when transport is tcp", so an install could complete

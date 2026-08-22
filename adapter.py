@@ -1025,15 +1025,71 @@ def register(ctx: Any) -> None:
     register_tools(ctx)
 
 
-def check_env_ready() -> bool:
+def complete_install_config(**kwargs: Any) -> bool:
+    """Ask for the network settings the generic installer skipped.
+
+    Hermes prompts for ``plugin.yaml``'s ``requires_env`` and not for
+    ``optional_env``, so an operator who answers ``tcp`` to the transport
+    question is never asked for the host or the port that answer makes
+    necessary — the install completes and the radio is unreachable.  The
+    host cannot simply move to ``requires_env``: that list is
+    unconditional, and every serial operator would then be made to supply a
+    TCP host they do not have.
+
+    So the conditional half of the questions is asked from here, driven by
+    :data:`envcheck.ENV_RULES` — the same rules the wizard and
+    ``validate_config`` obey, not a second copy of them.  Returns True when
+    the configuration ends up complete; on a non-interactive run with
+    something genuinely missing it logs the variable and the exact ``.env``
+    line and returns False rather than blocking on ``input()``.
+
+    Accepts and ignores keyword arguments so a Hermes hook may pass context
+    without this becoming a signature negotiation.
+    """
+    try:
+        from .install_prompt import MissingConfiguration, ensure_configured
+    except ImportError:  # pragma: no cover - direct-import context
+        from install_prompt import (  # type: ignore[no-redef]
+            MissingConfiguration,
+            ensure_configured,
+        )
+
+    try:
+        answered = ensure_configured(**kwargs)
+    except MissingConfiguration as e:
+        logger.error("Meshtastic: %s", e)
+        return False
+    except ImportError as e:
+        # hermes_cli is not importable — nothing to prompt with.  Fall back
+        # to the passive check so a fully pre-configured env still installs.
+        logger.debug("Meshtastic: interactive prompts unavailable (%s)", e)
+        return check_env_ready(prompt=False)
+
+    if answered:
+        logger.info(
+            "Meshtastic: collected %s during install", ", ".join(sorted(answered))
+        )
+    return True
+
+
+def check_env_ready(prompt: bool = True, **kwargs: Any) -> bool:
     """Whether the configuration is complete enough to install.
 
     Install scope: this is the gate the generic (non-wizard) install path
     needs, because ``plugin.yaml``'s ``requires_env`` cannot express a
     conditional requirement and so never prompts for the host that a tcp
-    install cannot run without.  Logs every problem before returning False
-    — a bare bool leaves the operator with nothing to act on.
+    install cannot run without.
+
+    With *prompt* left on — the install case — a missing conditional value
+    is asked for rather than merely refused, so the operator finishes the
+    install with a working configuration instead of an error to go and fix.
+    Pass ``prompt=False`` for a pure, side-effect-free check.  Either way
+    every remaining problem is logged before returning False; a bare bool
+    leaves the operator with nothing to act on.
     """
+    if prompt:
+        return complete_install_config(**kwargs)
+
     problem = validate_env(scope="install")
     if problem:
         logger.error("Meshtastic: %s", problem)

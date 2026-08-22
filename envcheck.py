@@ -107,6 +107,17 @@ class EnvRule(NamedTuple):
     #: locked out of a working deployment by a new prompt-time requirement.
     #: Anything that makes the radio physically unreachable is "runtime".
     scope: str = "runtime"
+    #: Question to ask when this variable has to be filled in interactively.
+    #: Empty means the install-time prompter never asks for it — the value
+    #: has a working default or the wizard covers it in a richer step.
+    prompt: str = ""
+    #: Value offered at the prompt, accepted by pressing enter.  Only ever
+    #: set for a variable with a genuinely working default.
+    default: str = ""
+    #: Whether the install-time prompter should ask for this variable even
+    #: when it is not required, so a non-default value can be supplied.
+    #: A port that a stock radio gets right is still worth offering.
+    prompt_when: Callable[[Mapping[str, str]], bool] = lambda env: False
 
 
 def _validate_transport(value: str) -> Optional[str]:
@@ -159,6 +170,7 @@ ENV_RULES: Sequence[EnvRule] = (
         # transport layer raises before a single packet is sent.
         required_when=lambda env: _transport(env) == "tcp",
         condition="when MESHTASTIC_TRANSPORT=tcp",
+        prompt="Radio hostname or IP (e.g. meshtastic.local)",
         remedy=(
             "Set MESHTASTIC_TCP_HOST=meshtastic.local (or the radio's IP) in "
             "~/.hermes/.env, or reconfigure with: hermes gateway setup"
@@ -204,6 +216,13 @@ ENV_RULES: Sequence[EnvRule] = (
         ),
         condition="never — optional",
         validate=_validate_tcp_port,
+        prompt="Radio TCP port",
+        default=str(DEFAULT_TCP_PORT),
+        # Optional, but still asked during a tcp install: a radio behind an
+        # SSH tunnel or a reverse proxy is not on 4403, and that is
+        # invisible until nothing connects.  Pre-filled, so the common case
+        # is one keypress.
+        prompt_when=lambda env: _transport(env) == "tcp",
     ),
     EnvRule(
         name="MESHTASTIC_ALLOWED_USERS",

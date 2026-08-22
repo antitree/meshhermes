@@ -39,6 +39,7 @@ py-modules = [
     "adapter",
     "chunking",
     "envcheck",
+    "install_prompt",
     "nodedb",
     "normalize",
     "policy",
