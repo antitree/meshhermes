@@ -149,7 +149,7 @@ ENV_RULES: Sequence[EnvRule] = (
         validate=_validate_transport,
         remedy=(
             "Set MESHTASTIC_TRANSPORT=serial or MESHTASTIC_TRANSPORT=tcp in "
-            "~/.hermes/.env, or run: hermes gateway setup"
+            "~/.hermes/.env, or reconfigure with: hermes gateway setup"
         ),
     ),
     EnvRule(
@@ -161,7 +161,7 @@ ENV_RULES: Sequence[EnvRule] = (
         condition="when MESHTASTIC_TRANSPORT=tcp",
         remedy=(
             "Set MESHTASTIC_TCP_HOST=meshtastic.local (or the radio's IP) in "
-            "~/.hermes/.env, or run: hermes gateway setup"
+            "~/.hermes/.env, or reconfigure with: hermes gateway setup"
         ),
     ),
     EnvRule(
@@ -180,11 +180,12 @@ ENV_RULES: Sequence[EnvRule] = (
         scope="install",
         validate=_validate_bool,
         remedy=(
-            "Set MESHTASTIC_ALLOW_ALL_USERS=false and list your node IDs in "
-            "MESHTASTIC_ALLOWED_USERS (an empty list is fine — you can pair a "
-            "node later), or set MESHTASTIC_ALLOW_ALL_USERS=true to let any "
-            "node in radio range command the bot (dev only). "
-            "Or run: hermes gateway setup"
+            "In ~/.hermes/.env, set MESHTASTIC_ALLOW_ALL_USERS=false and list "
+            "your node IDs in MESHTASTIC_ALLOWED_USERS (an empty list is fine "
+            "— you can pair a node later), or set "
+            "MESHTASTIC_ALLOW_ALL_USERS=true to let any node in radio range "
+            "command the bot (dev only). "
+            "Or reconfigure with: hermes gateway setup"
         ),
     ),
     EnvRule(

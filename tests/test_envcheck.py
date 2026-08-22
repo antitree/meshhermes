@@ -128,9 +128,11 @@ class TestTransportRequired:
     def test_message_names_the_variable_and_the_remedy(self):
         message = validate_env({"MESHTASTIC_ALLOW_ALL_USERS": "false"})
         assert "MESHTASTIC_TRANSPORT" in message
-        # The operator needs both routes, not just the wizard.
+        # The operator needs both routes, not just the wizard.  The wizard
+        # is named as the reconfigure path, never as an install step — see
+        # TestRemedyWording.
         assert ".env" in message
-        assert "hermes gateway setup" in message
+        assert "reconfigure with: hermes gateway setup" in message
 
     def test_whitespace_only_counts_as_unset(self):
         """`MESHTASTIC_TRANSPORT=   ` in a .env must not satisfy the rule."""
@@ -408,3 +410,60 @@ class TestValidateConfigUsesTheSharedRules:
 
     def test_serial_without_a_port_is_valid(self):
         assert adapter_mod.validate_config(FakeConfig(extra={"transport": "serial"})) is True
+
+
+class TestRemedyWording:
+    """The docs and every user-facing string tell one install story.
+
+    README.md documents the canonical first-install flow as ``hermes
+    plugins install`` -> answer the prompts -> ``hermes gateway restart``.
+    ``hermes gateway setup`` is the *reconfigure* path, not a required
+    install step, so every message that names it fires on a missing or
+    broken configuration and must read as reconfiguration.  A message that
+    presented the wizard as the normal next step after installing is the
+    exact inconsistency this wording locks out.
+    """
+
+    def blocking_rules(self):
+        return [
+            rule
+            for rule in ENV_RULES
+            if rule.required_when({"MESHTASTIC_TRANSPORT": "tcp"})
+            or rule.required_when({"MESHTASTIC_TRANSPORT": "serial"})
+        ]
+
+    def test_wizard_is_offered_as_reconfiguration_not_as_an_install_step(self):
+        for rule in self.blocking_rules():
+            assert "hermes gateway setup" in rule.remedy, rule.name
+            assert "reconfigure with: hermes gateway setup" in rule.remedy, (
+                rule.name + " names the wizard without framing it as the "
+                "reconfigure path"
+            )
+
+    def test_remedies_lead_with_the_env_file(self):
+        """Setting the value directly is the first-class answer.
+
+        The install prompts write ``~/.hermes/.env``; an operator fixing one
+        value should see that same surface named, not be sent through a
+        wizard for a single setting.
+        """
+        for rule in self.blocking_rules():
+            assert "~/.hermes/.env" in rule.remedy, rule.name
+
+    def test_no_remedy_tells_the_operator_to_install_the_plugin_again(self):
+        """A missing variable is never fixed by re-running the installer."""
+        for rule in self.blocking_rules():
+            assert "plugins install" not in rule.remedy, rule.name
+
+    def test_transport_error_for_a_missing_tcp_host_matches_the_rule(self):
+        """transport.py's own message must not drift from ENV_RULES."""
+        pytest.importorskip("meshtastic.tcp_interface")
+        import transport as transport_mod
+
+        with pytest.raises(transport_mod.TransportError) as excinfo:
+            transport_mod._build_interface("tcp", serial_port="", tcp_host="")
+
+        message = str(excinfo.value)
+        assert "MESHTASTIC_TCP_HOST" in message
+        assert "~/.hermes/.env" in message
+        assert "reconfigure with: hermes gateway setup" in message
