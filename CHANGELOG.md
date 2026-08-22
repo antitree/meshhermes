@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Breaking
+- **Installing the plugin no longer prompts for anything, and this
+  reverses part of the 1.0.0 install behaviour.** 1.0.0 listed
+  `MESHTASTIC_TRANSPORT` and `MESHTASTIC_ALLOW_ALL_USERS` in
+  `plugin.yaml`'s `requires_env` so Hermes' generic installer would ask for
+  them inline. Both have moved back to `optional_env`, `requires_env` is
+  gone entirely, and `required_env` is no longer passed to
+  `register_platform()`. Anyone whose install scripting depended on being
+  prompted must now run `hermes gateway setup` — or pre-populate
+  `~/.hermes/.env`, which was always equivalent.
+
+  The reason is that both of those lists are flat, and the requirements are
+  not: a TCP host is mandatory, but only once the transport is `tcp`. A
+  flat prompt list can therefore only under-ask (a tcp install with no
+  host, which fails later at the radio) or over-ask (a serial operator made
+  to supply a network address they do not have). `hermes gateway setup` is
+  wired through `setup_fn`, is the one configuration path whose invocation
+  is verifiable from this repo, and does know the conditional rules — so it
+  is now the canonical way to configure MeshHermes, rather than an optional
+  reconfigure step.
+
+  Nothing is lost by not asking: `envcheck.py`'s rules still run from
+  `validate_config()` and `connect()`, so a gateway started with a
+  configuration that cannot reach the radio still fails immediately with a
+  message naming the variable and both ways to fix it.
+- This also supersedes the documentation change in 1.0.0 that removed
+  `hermes gateway setup` from the required install path. That removal was
+  correct while the install prompted inline; it no longer does, so the
+  wizard returns to the documented flow: install → enable → `hermes gateway
+  setup` → `hermes gateway restart`.
+
 - **Mention matching is leading-position only.** A mid-sentence `@name`
   no longer counts as addressing the bot ("tell @hermes I said hi" is
   conversation *about* the bot, not an instruction *to* it). Deployments
@@ -15,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   start of the message.
 
 ### Changed
+- **The Meshtastic gateway's icon is a bunny rabbit** (🐰), replacing the
+  radio emoji, and `plugin.yaml` now carries it in an `icon:` key alongside
+  the `emoji=` that `register_platform()` has always taken. A test keeps
+  the two in sync.
+- **`hermes gateway setup` is now the canonical configuration path**, not an
+  optional reconfigure step, and its documentation says so. It already
+  asked for everything and already re-validated what it saved; what changed
+  is that nothing else asks any more.
+- `check_env_ready()` remains as a pure, non-prompting check of whether a
+  configuration is coherent, and is no longer described or used as an
+  install gate.
 - **Mention gating now matches how Meshtastic actually works.** There is no
   tagging protocol on a mesh channel - people address a node by typing its
   name first. The old IRC-style patterns required `@name` or `name:`/`name,`,
@@ -32,12 +73,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `longName`/`shortName` still reach the bot.
 
 ### Added
+- `adapter.POST_INSTALL_MESSAGE` / `post_install_message()`: the three steps
+  to take once the plugin is on disk — enable it, `hermes gateway setup`,
+  `hermes gateway restart` — as a plain non-prompting string, also exported
+  from the package. Whether Hermes surfaces it during
+  `hermes plugins install` is not something this repo can verify; README.md
+  is the reliable source of truth for the flow, and a test keeps the two in
+  agreement.
+- `tests/test_setup_wizard.py`: coverage for `hermes gateway setup` itself,
+  which had none. It drives the wizard against a stand-in for
+  `hermes_cli.setup` and asserts that a run covers the full mandatory set
+  for both transports, that a tcp run requires a host and offers the port
+  pre-filled with `4403`, and that a serial run never asks for a network
+  address.
 - `envcheck.py`: one declarative rule set for which `MESHTASTIC_*` variables
   are mandatory, including conditional ones. `plugin.yaml`'s schema cannot
-  say "required only when transport is tcp", so an install could complete
-  with `MESHTASTIC_TRANSPORT=tcp` and no host and only fail later at
-  connect. The rules are now enforced by the plugin itself, shared by the
-  setup wizard, `validate_config()`, and `connect()`.
+  say "required only when transport is tcp", which is why the install
+  prompts for nothing at all. The rules are enforced by the plugin itself,
+  shared by the setup wizard, `validate_config()`, and `connect()`, so a
+  gateway configured with `MESHTASTIC_TRANSPORT=tcp` and no host fails
+  immediately with a message naming the variable rather than failing
+  obscurely at the radio.
 - `MESHTASTIC_TCP_PORT` (default `4403`) is now read and honoured. The TCP
   port was previously hardcoded by the library default, so a radio behind
   an SSH tunnel or reverse proxy was unreachable. The wizard prompts for it
@@ -55,16 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PlatformEntry` field.
 
 ### Changed
-- README documents the install flow that actually happens: `hermes plugins
-  install` prompts for the required variables and then asks you to restart
-  the gateway. `hermes gateway setup` was presented as a required
-  configuration step, which no longer matched the install — it is now
-  documented as the reconfigure path, and as the step a *manual* install
-  needs because it never sees the prompts.
-- Every message naming `hermes gateway setup` now says "reconfigure with",
-  so a missing-variable error cannot be read as "your install is
-  incomplete, run the wizard".
-- `MESHTASTIC_ALLOW_ALL_USERS` must now be set explicitly at install time.
+- README documents the install flow that actually happens. This was
+  rewritten twice within this release: first to match an install that
+  prompted inline, and then — once the plugin stopped prompting at all —
+  to the flow that now stands, install → enable → `hermes gateway setup` →
+  `hermes gateway restart`. See the Breaking section above.
+- `MESHTASTIC_ALLOW_ALL_USERS` must now be set explicitly.
   Left unset it either silently opened the bot to every node in radio range
   or left it unable to answer anyone, with no indication which. An empty
   `MESHTASTIC_ALLOWED_USERS` with `MESHTASTIC_ALLOW_ALL_USERS=false` remains

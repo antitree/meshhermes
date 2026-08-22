@@ -26,7 +26,8 @@ Installs into `~/.hermes/plugins/` and needs **zero changes to Hermes core**.
 ```bash
 hermes plugins install antitree/meshhermes
 pip install meshtastic
-# answer the prompts
+# then: enable the plugin
+hermes gateway setup      # choose Meshtastic
 hermes gateway restart
 ```
 
@@ -34,39 +35,35 @@ hermes gateway restart
 enable it. Third-party platform plugins are opt-in, so it stays off until you
 say yes (or pass `--enable`).
 
-The install prompts for the settings the plugin cannot run without —
-`meshtastic-platform requires the following environment variables` — and writes
-your answers to `~/.hermes/.env`:
+The install itself asks nothing. Every Meshtastic setting is gathered by
+`hermes gateway setup`, which writes them to `~/.hermes/.env`:
 
-| Setting | Answer |
+| Step | What happens |
 |---|---|
-| `MESHTASTIC_TRANSPORT` | `serial` for a USB radio, `tcp` for one on WiFi |
-| `MESHTASTIC_ALLOW_ALL_USERS` | `false` unless you mean to let every node in radio range command the bot |
-| `MESHTASTIC_TCP_HOST` | the radio's hostname or IP, e.g. `meshtastic.local`. Needed only for `tcp` — leave it blank for `serial`. |
+| 1. enable the plugin | say yes at install, or pass `--enable`, or add `meshtastic-platform` to `plugins.enabled` in `~/.hermes/config.yaml` |
+| 2. `hermes gateway setup` | choose Meshtastic and answer the questions — transport, radio address, bot name, access control, position privacy |
+| 3. `hermes gateway restart` | picks up the new configuration and connects to the radio |
 
-Then restart the gateway and it is running. There is no separate configuration
-step: everything else has a working default.
+The wizard asks only what your answers make relevant: choose `tcp` and it
+requires the radio's hostname or IP and offers the TCP port pre-filled with
+`4403`; choose `serial` and it offers the detected USB device instead, and never
+asks about a network address you do not have. That conditional shape is why the
+install does not prompt — a flat list of install-time questions can only
+under-ask or over-ask.
 
-A value already present in `~/.hermes/.env` is not asked for again, so writing
-those settings there ahead of time makes the install non-interactive.
+The wizard is also how you change any of it later. The full list of settings is
+in [Environment variables](#environment-variables) below; setting those in
+`~/.hermes/.env` by hand is equivalent to running the wizard.
 
-To change any of it later, or to reach the settings the install does not ask
-about — access-control detail, position privacy, the home channel for cron — run
-the wizard:
-
-```bash
-hermes gateway setup      # choose Meshtastic
-hermes gateway restart
-```
-
-The full list of settings is in [Environment variables](#environment-variables)
-below; the wizard covers the same ground interactively.
+If the gateway starts before it has been configured, it stops with a message
+naming the missing variable and how to set it, rather than failing obscurely at
+the radio.
 
 <details>
 <summary>Manual install</summary>
 
-A manual install never sees the install prompts, so it needs the configuration
-step the plugin install does for you.
+Cloning by hand replaces the first two steps above. The configuration step is
+the same one either way.
 
 ```bash
 git clone https://github.com/antitree/meshhermes \
@@ -92,7 +89,7 @@ hermes gateway restart
 
 ## Configuration
 
-There are a few config options that are requirements, the rest are optional. 
+There are a few config options that are requirements, the rest are optional.
 
 ### Minimal working config
 
@@ -114,7 +111,7 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_TRANSPORT` | yes | `serial` or `tcp` |
 | `MESHTASTIC_ALLOW_ALL_USERS` | yes | must be set explicitly: `true` opens the bot to every node in range (dev only), **inbound and outbound**; `false` restricts it to `MESHTASTIC_ALLOWED_USERS` |
 | `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs. Empty is valid — pair a node later. |
-| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. Install and connect both fail without it when `MESHTASTIC_TRANSPORT=tcp`. |
+| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. The gateway refuses to connect without it when `MESHTASTIC_TRANSPORT=tcp`. |
 | `MESHTASTIC_TCP_PORT` | no | default `4403`; set it when the radio is behind a tunnel or reverse proxy |
 | `MESHTASTIC_SERIAL_PORT` | no | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
 | `MESHTASTIC_NODE_NAME` | no | mention trigger; defaults to the device's `longName` |
@@ -122,12 +119,13 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_EXPOSE_POSITION` | no | default `true`; `false` hides GPS in tool output |
 | `MESHTASTIC_AUTO_INSTALL` | no | default `false`; `true` pip-installs `meshtastic` on connect if missing |
 
-The required variables are checked before an install completes, so a
-configuration that cannot reach the radio is refused up front rather than
-failing later at connect time — that check is what the install prompts satisfy.
-Anything marked optional above is safe to leave unset: each has a working
-default. Values already in `~/.hermes/.env` satisfy the checks without any
-prompting.
+The required variables are checked before the gateway connects, so a
+configuration that cannot reach the radio is refused with a message naming the
+variable rather than failing obscurely at the radio — `hermes gateway setup`
+runs the same check on what it saves, so a wizard run that reports success has
+already been verified. Anything marked optional above is safe to leave unset:
+each has a working default. Values already in `~/.hermes/.env` satisfy the
+checks, so a pre-populated env file needs no wizard run at all.
 
 ---
 

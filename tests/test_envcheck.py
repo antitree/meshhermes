@@ -1,16 +1,21 @@
 """Tests for the conditional environment requirements.
 
-The bug these cover: Hermes' generic installer prompts only for what
-``plugin.yaml`` lists in ``requires_env``, and that schema cannot express
-"required only when transport is tcp".  An install therefore completed
-happily with ``MESHTASTIC_TRANSPORT=tcp`` and no host, and the operator
-found out at connect time that the platform could not run.
+The problem these cover: a flat list of install-time prompts cannot say
+"required only when transport is tcp", so it can only under-ask (a tcp
+install with no host, which fails at connect) or over-ask (a serial
+operator made to supply a TCP host they do not have).
 
-Every rule is checked in both directions: missing → blocks with a message
+The plugin therefore prompts for nothing at install; ``hermes gateway
+setup`` gathers everything, and these rules are the shared contract it and
+the runtime both enforce.  That makes this module the safety net: a
+gateway started before the wizard ever ran, or with a hand-written
+``.env``, must still fail with a message naming the variable and the fix.
+
+Every rule is checked in both directions: missing → reported with a message
 that names the variable, and satisfied → passes with no complaint.  The
 "satisfied" cases deliberately supply values through a plain mapping,
 standing in for ``~/.hermes/.env``, to prove that a fully-configured env
-file needs no interactive prompting.
+file is accepted without any interaction at all.
 """
 
 from __future__ import annotations
@@ -128,11 +133,11 @@ class TestTransportRequired:
     def test_message_names_the_variable_and_the_remedy(self):
         message = validate_env({"MESHTASTIC_ALLOW_ALL_USERS": "false"})
         assert "MESHTASTIC_TRANSPORT" in message
-        # The operator needs both routes, not just the wizard.  The wizard
-        # is named as the reconfigure path, never as an install step — see
+        # The operator needs both routes: the env file for a single value,
+        # and the wizard, which is the canonical path — see
         # TestRemedyWording.
         assert ".env" in message
-        assert "reconfigure with: hermes gateway setup" in message
+        assert "hermes gateway setup" in message
 
     def test_whitespace_only_counts_as_unset(self):
         """`MESHTASTIC_TRANSPORT=   ` in a .env must not satisfy the rule."""
@@ -185,7 +190,7 @@ class TestTcpHostConditionallyRequired:
 
 
 class TestAccessControlMustBeExplicit:
-    def test_unset_allow_all_blocks_install(self):
+    def test_unset_allow_all_is_reported(self):
         problems = check_env({"MESHTASTIC_TRANSPORT": "serial"})
         assert "MESHTASTIC_ALLOW_ALL_USERS" in names_of(problems)
 
@@ -324,20 +329,25 @@ class TestReadsTheProcessEnvironmentByDefault:
         assert "MESHTASTIC_TCP_HOST" in (validate_env() or "")
 
 
-class TestAdapterInstallGate:
-    """``check_env_ready`` is what a non-wizard install path calls."""
+class TestCheckEnvReady:
+    """``check_env_ready`` is a pure predicate over the whole rule set.
+
+    It is no longer an install gate — installing prompts for nothing and
+    blocks on nothing.  It survives as a non-prompting "is this env file
+    coherent?" check that logs what is wrong.
+    """
 
     def test_passes_on_a_complete_env(self, monkeypatch):
         monkeypatch.setenv("MESHTASTIC_TRANSPORT", "serial")
         monkeypatch.setenv("MESHTASTIC_ALLOW_ALL_USERS", "false")
         assert adapter_mod.check_env_ready() is True
 
-    def test_blocks_tcp_without_a_host(self, monkeypatch):
+    def test_reports_tcp_without_a_host(self, monkeypatch):
         monkeypatch.setenv("MESHTASTIC_TRANSPORT", "tcp")
         monkeypatch.setenv("MESHTASTIC_ALLOW_ALL_USERS", "false")
         assert adapter_mod.check_env_ready() is False
 
-    def test_blocks_when_access_control_is_undecided(self, monkeypatch):
+    def test_reports_undecided_access_control(self, monkeypatch):
         monkeypatch.setenv("MESHTASTIC_TRANSPORT", "serial")
         assert adapter_mod.check_env_ready() is False
 
@@ -415,13 +425,16 @@ class TestValidateConfigUsesTheSharedRules:
 class TestRemedyWording:
     """The docs and every user-facing string tell one install story.
 
-    README.md documents the canonical first-install flow as ``hermes
-    plugins install`` -> answer the prompts -> ``hermes gateway restart``.
-    ``hermes gateway setup`` is the *reconfigure* path, not a required
-    install step, so every message that names it fires on a missing or
-    broken configuration and must read as reconfiguration.  A message that
-    presented the wizard as the normal next step after installing is the
-    exact inconsistency this wording locks out.
+    README.md documents the canonical flow as ``hermes plugins install``
+    -> enable the plugin -> ``hermes gateway setup`` -> ``hermes gateway
+    restart``.  The install itself asks nothing, so the wizard is now a
+    required step rather than an optional reconfigure — and every rule's
+    remedy must name it, because it is the path that actually fixes a
+    missing variable.
+
+    The remedies still lead with ``~/.hermes/.env``: a operator staring at
+    one broken variable should be able to fix that one variable without
+    walking a whole wizard.  Both routes, wizard named second.
     """
 
     def blocking_rules(self):
@@ -432,19 +445,16 @@ class TestRemedyWording:
             or rule.required_when({"MESHTASTIC_TRANSPORT": "serial"})
         ]
 
-    def test_wizard_is_offered_as_reconfiguration_not_as_an_install_step(self):
+    def test_every_remedy_names_the_wizard(self):
+        """The wizard is the canonical configuration path, so say so."""
         for rule in self.blocking_rules():
             assert "hermes gateway setup" in rule.remedy, rule.name
-            assert "reconfigure with: hermes gateway setup" in rule.remedy, (
-                rule.name + " names the wizard without framing it as the "
-                "reconfigure path"
-            )
 
     def test_remedies_lead_with_the_env_file(self):
         """Setting the value directly is the first-class answer.
 
-        The install prompts write ``~/.hermes/.env``; an operator fixing one
-        value should see that same surface named, not be sent through a
+        The wizard writes ``~/.hermes/.env``; an operator fixing one value
+        should see that same surface named, not be sent through a whole
         wizard for a single setting.
         """
         for rule in self.blocking_rules():
@@ -466,4 +476,55 @@ class TestRemedyWording:
         message = str(excinfo.value)
         assert "MESHTASTIC_TCP_HOST" in message
         assert "~/.hermes/.env" in message
-        assert "reconfigure with: hermes gateway setup" in message
+        assert "hermes gateway setup" in message
+
+
+class TestRuntimeSafetyNetSurvivesTheQuietInstall:
+    """Losing install-time prompting must not mean starting broken silently.
+
+    The install now asks nothing at all, so a gateway can be started with a
+    configuration nobody ever answered a question about. That makes these
+    the last line of defence: they must fail loudly, early, and name both
+    the variable and the fix.
+    """
+
+    async def test_tcp_without_host_fails_the_gateway_start(self):
+        a = adapter_mod.MeshtasticAdapter(FakeConfig(extra={"transport": "tcp"}))
+        assert await a.connect() is False
+        assert a.has_fatal_error
+
+    async def test_the_failure_names_the_variable_and_the_fix(self):
+        a = adapter_mod.MeshtasticAdapter(FakeConfig(extra={"transport": "tcp"}))
+        await a.connect()
+        message = a.fatal_error_message
+        assert "MESHTASTIC_TCP_HOST" in message
+        assert "hermes gateway setup" in message
+        assert "~/.hermes/.env" in message
+
+    async def test_the_failure_is_categorised_as_configuration_not_hardware(self):
+        """A user must not go hunting for a radio fault."""
+        a = adapter_mod.MeshtasticAdapter(FakeConfig(extra={"transport": "tcp"}))
+        await a.connect()
+        assert a.fatal_error_code == "config_missing"
+        assert a.fatal_error_retryable is False
+
+    async def test_an_entirely_unconfigured_gateway_fails_on_the_transport(self):
+        """Nothing answered at install, nothing run afterwards."""
+        a = adapter_mod.MeshtasticAdapter(FakeConfig(extra={}))
+        assert await a.connect() is False
+        assert "MESHTASTIC_TRANSPORT" in a.fatal_error_message
+
+    def test_validate_config_rejects_tcp_without_a_host(self):
+        """The pre-start check catches it too, not only connect()."""
+        assert adapter_mod.validate_config(FakeConfig(extra={"transport": "tcp"})) is False
+
+    async def test_a_complete_tcp_config_gets_past_the_env_gate(self, monkeypatch):
+        """The net must not fire on a configuration the wizard would produce."""
+        monkeypatch.setenv("MESHTASTIC_TRANSPORT", "tcp")
+        monkeypatch.setenv("MESHTASTIC_TCP_HOST", "radio.local")
+        monkeypatch.setenv("MESHTASTIC_ALLOW_ALL_USERS", "false")
+        a = adapter_mod.MeshtasticAdapter(FakeConfig(extra={}))
+        problem = envcheck.validate_env(
+            adapter_mod._effective_env(a._extra), scope="runtime"
+        )
+        assert problem is None
