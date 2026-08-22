@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-22
+
+Automated patch release. See the [full diff](https://github.com/antitree/meshhermes/compare/v1.0.8...v1.1.0) for the changes this rolls up.
+
 ## [1.0.8] - 2026-08-22
 
 Automated patch release. See the [full diff](https://github.com/antitree/meshhermes/compare/v1.0.7...v1.0.8) for the changes this rolls up.
@@ -279,7 +283,8 @@ and CJK text.
 BLE and MQTT transports are not implemented; configuring them fails
 validation with an explicit error rather than silently. See `ROADMAP.md`.
 
-[Unreleased]: https://github.com/antitree/meshhermes/compare/v1.0.8...HEAD
+[Unreleased]: https://github.com/antitree/meshhermes/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/antitree/meshhermes/compare/v1.0.8...v1.1.0
 [1.0.8]: https://github.com/antitree/meshhermes/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/antitree/meshhermes/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/antitree/meshhermes/compare/v1.0.0...v1.0.6
