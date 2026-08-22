@@ -92,8 +92,7 @@ hermes gateway restart
 
 ## Configuration
 
-The install collects what is mandatory. This section is the reference for the
-rest, and for writing the configuration by hand.
+There are a few config options that are requirements, the rest are optional. 
 
 ### Minimal working config
 
@@ -173,11 +172,6 @@ Hermes: Rain likely tomorrow AM, clearing by
 afternoon. High 61F, wind 10-15mph from SW.
 ```
 
-Messages that don't address it are ignored entirely. On a shared channel that
-matters: every reply costs airtime that everyone else is also using.
-
-<!-- Screenshot slot: Meshtastic Android app showing a LongFast exchange with Hermes. -->
-
 ### Talking to it privately
 
 With `dm_policy: pairing`, a new node's first DM creates a pairing request you
@@ -212,40 +206,6 @@ the radio itself:
   is above 60%.
 ```
 
-
-## More documentation
-
-The README covers getting running. The details live alongside it:
-
-| Document | What's in it |
-|---|---|
-| [SECURITY.md](SECURITY.md) | Threat model, what's in and out of scope, how to report a vulnerability, and operator security notes |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, running the tests without hardware, and the non-obvious traps in this codebase |
-| [ROADMAP.md](ROADMAP.md) | BLE and MQTT transports, proactive alerts, and other unbuilt work |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-
-A few things worth knowing before you deploy:
-
-- **Access control is Hermes-native.** `dm_policy` and `group_policy` are
-  enforced by the gateway's own authorization layer and pairing store, not
-  reimplemented here. `dm_policy: open` requires an explicit `"*"` in
-  `allow_from` so a radio is never opened by a config typo.
-- **Node IDs are not authenticated** and channel traffic is readable by anyone
-  holding the channel key. An allowlist raises the bar; it is not identity.
-- **Positions are real people's coordinates.** They are never logged, are
-  rounded to ~11 m in tool output, and can be suppressed entirely with
-  `MESHTASTIC_EXPOSE_POSITION=false`.
-- **BLE and MQTT are not supported yet** — configuring them fails at validation
-  with a clear error rather than silently doing nothing.
-- **A serial port cannot be shared.** If another program holds your radio, or
-  ModemManager probes it on Linux, Hermes cannot open it.
-
-Run the hardware check before trusting a deployment:
-
-```bash
-python scripts/smoke_hardware.py --transport serial --port /dev/ttyUSB0
-```
-
 ## Acknowledgements
 
 **Inspired by [MeshClaw](https://github.com/Seeed-Solution/MeshClaw)** by
@@ -256,14 +216,6 @@ MeshHermes is an independent Python implementation of those ideas for Hermes
 Agent, and its normalization, chunking, and policy modules follow MeshClaw's
 design closely. MeshClaw is MIT licensed.
 
-Thanks also to:
-
-- **[Meshtastic](https://meshtastic.org)** — the open-source LoRa mesh firmware
-  and the [`meshtastic` Python library](https://github.com/meshtastic/python)
-  this plugin is built on. GPL-3.0.
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** by
-  [Nous Research](https://nousresearch.com/) — the agent framework, whose plugin
-  interface made this possible without touching core. MIT licensed.
 
 ## License
 
