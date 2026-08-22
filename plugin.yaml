@@ -1,7 +1,13 @@
-name: meshtastic-platform
+# The plugin's identity, and it must match the name passed to
+# ctx.register_platform() in adapter.py: that is the name Hermes keys
+# config routing on, which is why the README's example config says
+# `platforms: meshtastic:`.  The install DIRECTORY stays
+# `meshtastic-platform` on purpose — a directory named `meshtastic` on
+# sys.path would shadow the pip package this plugin imports.
+name: meshtastic
 label: Meshtastic
 kind: platform
-version: 1.0.0
+version: 1.0.6
 description: >
   Meshtastic LoRa mesh gateway adapter for Hermes Agent.
   Relays messages between a Meshtastic radio (serial/USB or TCP/WiFi) and

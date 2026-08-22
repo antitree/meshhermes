@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meshhermes"
-version = "1.0.0"
+version = "1.0.6"
 description = "Meshtastic LoRa mesh platform plugin for Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,11 @@ Homepage = "https://github.com/antitree/meshhermes"
 Issues = "https://github.com/antitree/meshhermes/issues"
 
 # Hermes discovers pip-installed plugins through this entry-point group.
+# The entry-point name stays `meshtastic-platform` deliberately: it is
+# the identifier existing installs already carry in
+# ~/.hermes/config.yaml under `plugins: enabled:`, and renaming it would
+# strand them.  The platform's own name — the one Hermes routes
+# `platforms: meshtastic:` on — is set in plugin.yaml and adapter.py.
 [project.entry-points."hermes_agent.plugins"]
 meshtastic-platform = "meshhermes"
 

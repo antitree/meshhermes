@@ -19,4 +19,4 @@ except ImportError:  # pragma: no cover - test/collection context
         register = None  # type: ignore[assignment]
 
 __all__ = ["register"]
-__version__ = "1.0.0"
+__version__ = "1.0.6"

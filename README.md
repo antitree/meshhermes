@@ -35,7 +35,7 @@ enable it. Third-party platform plugins are opt-in, so it stays off until you
 say yes (or pass `--enable`).
 
 The install prompts for the settings the plugin cannot run without —
-`meshtastic-platform requires the following environment variables` — and writes
+`meshtastic requires the following environment variables` — and writes
 your answers to `~/.hermes/.env`:
 
 | Setting | Answer |
@@ -81,6 +81,12 @@ plugins:
   enabled:
     - meshtastic-platform
 ```
+
+The directory and the `plugins: enabled:` entry are `meshtastic-platform`,
+while the platform itself is `meshtastic` (that is the name used under
+`platforms:` below). The directory keeps the suffix on purpose: a directory
+named `meshtastic` on `sys.path` would shadow the `meshtastic` pip package
+this plugin imports.
 
 Then configure it — the wizard, or the equivalent values in `~/.hermes/.env`:
 

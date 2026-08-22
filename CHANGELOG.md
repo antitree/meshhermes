@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-08-22
+
+Consolidates everything merged since 1.0.0 (PRs #1, #2, #3) together with a
+fix for the plugin's own name.
+
 ### Breaking
 - **Mention matching is leading-position only.** A mid-sentence `@name`
   no longer counts as addressing the bot ("tell @hermes I said hi" is
@@ -76,6 +81,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   own mesh.
 - `MESHTASTIC_ALLOW_ALL_USERS` is now honoured by the outbound send gate,
   not only by Hermes' inbound authorization.
+
+### Fixed
+- **The manifest and the runtime registration disagreed about the plugin's
+  name.** `plugin.yaml` declared `name: meshtastic-platform` while
+  `adapter.py` called `ctx.register_platform(name="meshtastic", ...)`, so
+  the plugin listed itself under one name and routed config under another.
+  The manifest now says `meshtastic`, matching the registration and the
+  `platforms: meshtastic:` key the README's example config has always used.
+
+  Three identifiers deliberately keep the `-platform` suffix and are
+  unchanged: the install directory `~/.hermes/plugins/meshtastic-platform`,
+  the `hermes_agent.plugins` entry-point name, and the value existing
+  installs carry in `~/.hermes/config.yaml` under `plugins: enabled:`.
+  Renaming the directory would shadow the `meshtastic` pip package that
+  `adapter.py` imports, and renaming the entry point would strand existing
+  installs. No action is required when upgrading.
 
 ### Security
 Fixes from a security review (MH-SEC-001 … 009):
@@ -165,5 +186,6 @@ and CJK text.
 BLE and MQTT transports are not implemented; configuring them fails
 validation with an explicit error rather than silently. See `ROADMAP.md`.
 
-[Unreleased]: https://github.com/antitree/meshhermes/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/antitree/meshhermes/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/antitree/meshhermes/compare/v1.0.0...v1.0.6
 [1.0.0]: https://github.com/antitree/meshhermes/releases/tag/v1.0.0
