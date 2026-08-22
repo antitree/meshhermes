@@ -77,14 +77,21 @@ Environment variables take precedence over `config.yaml`.
 | Variable | Required | Notes |
 |---|---|---|
 | `MESHTASTIC_TRANSPORT` | yes | `serial` or `tcp` |
-| `MESHTASTIC_SERIAL_PORT` | serial only | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
-| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local` |
+| `MESHTASTIC_ALLOW_ALL_USERS` | yes | must be set explicitly: `true` opens the bot to every node in range (dev only), **inbound and outbound**; `false` restricts it to `MESHTASTIC_ALLOWED_USERS` |
+| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. Install and connect both fail without it when `MESHTASTIC_TRANSPORT=tcp`. |
+| `MESHTASTIC_TCP_PORT` | no | default `4403`; set it when the radio is behind a tunnel or reverse proxy |
+| `MESHTASTIC_SERIAL_PORT` | no | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
+| `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs. Empty is valid — pair a node later. |
 | `MESHTASTIC_NODE_NAME` | no | mention trigger; defaults to the device's `longName` |
-| `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs |
-| `MESHTASTIC_ALLOW_ALL_USERS` | no | dev only — opens the bot to every node in range, **inbound and outbound** |
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
 | `MESHTASTIC_EXPOSE_POSITION` | no | default `true`; `false` hides GPS in tool output |
 | `MESHTASTIC_AUTO_INSTALL` | no | default `false`; `true` pip-installs `meshtastic` on connect if missing |
+
+The required variables are checked before an install completes, so a
+configuration that cannot reach the radio is refused up front rather than
+failing later at connect time. Anything marked optional above is safe to
+leave unset — each has a working default. Setting the values in
+`~/.hermes/.env` satisfies the checks without any prompting.
 
 ---
 

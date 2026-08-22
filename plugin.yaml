@@ -7,34 +7,43 @@ description: >
   Relays messages between a Meshtastic radio (serial/USB or TCP/WiFi) and
   the Hermes agent, and exposes read-only mesh telemetry tools.
 author: MeshHermes contributors
+# Only unconditional requirements can live here: this schema has no way to
+# say "required when MESHTASTIC_TRANSPORT=tcp".  The conditional rules are
+# enforced by the plugin itself (envcheck.py), which blocks an install that
+# would be unable to reach the radio.  Keep this list and envcheck.ENV_RULES
+# in agreement.
 requires_env:
   - name: MESHTASTIC_TRANSPORT
-    description: "How to reach the radio: 'serial' (USB) or 'tcp' (WiFi)"
+    description: "How to reach the radio: 'serial' (USB) or 'tcp' (WiFi). Choosing 'tcp' also makes MESHTASTIC_TCP_HOST mandatory."
     prompt: "Transport (serial/tcp)"
     password: false
+  - name: MESHTASTIC_ALLOW_ALL_USERS
+    description: "Access control, and a deliberate choice: 'true' lets ANY node in radio range command the bot (dev only); 'false' restricts it to MESHTASTIC_ALLOWED_USERS (an empty list is fine — pair a node later). A radio channel is public and node IDs are not authenticated, so there is no safe default."
+    prompt: "Allow all nodes? (true/false)"
+    password: false
 optional_env:
+  - name: MESHTASTIC_TCP_HOST
+    description: "Radio hostname or IP for TCP/WiFi (e.g. meshtastic.local). REQUIRED when MESHTASTIC_TRANSPORT=tcp — the plugin refuses to install or connect without it; ignored for serial."
+    prompt: "TCP host"
+    password: false
+  - name: MESHTASTIC_TCP_PORT
+    description: "Radio TCP API port (default 4403). Only needed when the radio is not on the standard port, e.g. behind an SSH tunnel or reverse proxy."
+    prompt: "TCP port"
+    password: false
   - name: MESHTASTIC_SERIAL_PORT
     description: "Serial device path (e.g. /dev/ttyUSB0). Leave empty to autodetect a single attached radio."
     prompt: "Serial port"
     password: false
-  - name: MESHTASTIC_TCP_HOST
-    description: "Radio hostname or IP for TCP/WiFi (e.g. meshtastic.local)"
-    prompt: "TCP host"
+  - name: MESHTASTIC_ALLOWED_USERS
+    description: "Comma-separated node IDs allowed to talk to the bot (e.g. !aabbccdd). Only consulted when MESHTASTIC_ALLOW_ALL_USERS=false; empty is valid — pair a node later."
+    prompt: "Allowed node IDs"
     password: false
   - name: MESHTASTIC_NODE_NAME
     description: "Mention trigger on channels. Defaults to the device's own longName."
     prompt: "Bot node name"
     password: false
-  - name: MESHTASTIC_ALLOWED_USERS
-    description: "Comma-separated node IDs allowed to talk to the bot (e.g. !aabbccdd)"
-    prompt: "Allowed node IDs"
-    password: false
-  - name: MESHTASTIC_ALLOW_ALL_USERS
-    description: "Allow any node on the mesh to command the bot (dev only)"
-    prompt: "Allow all nodes? (true/false)"
-    password: false
   - name: MESHTASTIC_HOME_CHANNEL
-    description: "Channel or node ID for cron / notification delivery (e.g. channel:LongFast)"
+    description: "Channel or node ID for cron / notification delivery (e.g. channel:LongFast). Without it, only cron delivery is unavailable."
     prompt: "Home channel"
     password: false
   - name: MESHTASTIC_AUTO_INSTALL
