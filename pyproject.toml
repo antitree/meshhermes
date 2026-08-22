@@ -38,6 +38,7 @@ meshtastic-platform = "meshhermes"
 py-modules = [
     "adapter",
     "chunking",
+    "envcheck",
     "nodedb",
     "normalize",
     "policy",

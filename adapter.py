@@ -23,7 +23,7 @@ import asyncio
 import datetime
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from gateway.config import Platform
 from gateway.platforms.base import (
@@ -61,6 +61,7 @@ try:
         resolve_require_mention,
     )
     from . import sendpolicy as sp
+    from .envcheck import resolve_tcp_port, validate_env
 except ImportError:  # pragma: no cover - direct-import context
     import transport as tp  # type: ignore[no-redef]
     from chunking import (  # type: ignore[no-redef]
@@ -85,6 +86,10 @@ except ImportError:  # pragma: no cover - direct-import context
         resolve_require_mention,
     )
     import sendpolicy as sp  # type: ignore[no-redef]
+    from envcheck import (  # type: ignore[no-redef]
+        resolve_tcp_port,
+        validate_env,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +131,7 @@ class MeshtasticAdapter(BasePlatformAdapter):
         self.transport = (os.getenv("MESHTASTIC_TRANSPORT") or extra.get("transport") or "serial").strip().lower()
         self.serial_port = os.getenv("MESHTASTIC_SERIAL_PORT") or extra.get("serial_port", "")
         self.tcp_host = os.getenv("MESHTASTIC_TCP_HOST") or extra.get("tcp_host", "")
+        self.tcp_port = resolve_tcp_port(extra=extra)
         self.node_name = os.getenv("MESHTASTIC_NODE_NAME") or extra.get("node_name", "")
 
         try:
@@ -189,15 +195,25 @@ class MeshtasticAdapter(BasePlatformAdapter):
         except ValueError:
             return None
 
-    def _mention_name(self) -> Optional[str]:
-        """The name that triggers a mention on a channel.
+    def _mention_names(self) -> Tuple[Optional[str], Optional[str], Tuple[Optional[str], ...]]:
+        """Every name that addresses this bot on a channel.
 
-        Configured ``node_name`` wins; otherwise the device's own
-        ``longName``, read (never written) from the radio.
+        Returns ``(primary, short_name, extra_names)``.  Configured
+        ``node_name`` is the primary trigger, but the device's real
+        ``longName``/``shortName`` stay triggers too: an operator who sets a
+        custom trigger word almost certainly still expects someone typing
+        the radio's actual name to reach the bot.  All read, never written.
         """
+        device_long, device_short = (
+            tp.get_my_names(self._iface) if self._iface is not None else (None, None)
+        )
         if self.node_name:
-            return self.node_name
-        return tp.get_my_long_name(self._iface) if self._iface is not None else None
+            return self.node_name, device_short, (device_long,)
+        return device_long, device_short, ()
+
+    def _mention_name(self) -> Optional[str]:
+        """The primary mention trigger (back-compat accessor)."""
+        return self._mention_names()[0]
 
     def _resolve_channel_name(self, index: Any) -> Optional[str]:
         """Map a packet's channel index to its configured name."""
@@ -252,6 +268,22 @@ class MeshtasticAdapter(BasePlatformAdapter):
             logger.info("Meshtastic: MESHTASTIC_AUTO_INSTALL set — installing the meshtastic package")
             await asyncio.to_thread(ensure_deps)
 
+        # The generic Hermes installer only prompts for what plugin.yaml
+        # lists in requires_env, and that schema cannot express "required
+        # only when transport is tcp".  So an install can complete while
+        # still being unrunnable; catch that here, before the radio, with a
+        # message naming the variable and how to set it.
+        #
+        # Runtime scope blocks only on what makes the radio unreachable.
+        # The access-control decision is an install-time requirement:
+        # re-enforcing it here would lock an existing deployment out of its
+        # own radio on upgrade, and those operators already expressed the
+        # same choice through config.yaml's dm_policy / allow_from.
+        env_problem = validate_env(_effective_env(self._extra), scope="runtime")
+        if env_problem:
+            self._set_fatal_error("config_missing", env_problem, retryable=False)
+            return False
+
         if self.transport in ("ble", "mqtt"):
             self._set_fatal_error(
                 "unsupported_transport",
@@ -281,6 +313,7 @@ class MeshtasticAdapter(BasePlatformAdapter):
                 transport=self.transport,
                 serial_port=self.serial_port,
                 tcp_host=self.tcp_host,
+                tcp_port=self.tcp_port,
             )
         except tp.TransportError as e:
             # A bad port or an unsupported transport will not fix itself.
@@ -459,14 +492,19 @@ class MeshtasticAdapter(BasePlatformAdapter):
             user = node_record.get("user") or {}
             user_name = user.get("longName") or user.get("shortName") or from_id
 
-            mention_name = self._mention_name()
+            mention_name, mention_short, mention_extra = self._mention_names()
 
             if is_direct:
                 chat_id = from_id
                 chat_name = user_name
                 chat_type = "dm"
                 gate = resolve_mention_gate(
-                    text, mention_name, require_mention=False, is_direct=True
+                    text,
+                    mention_name,
+                    require_mention=False,
+                    is_direct=True,
+                    short_name=mention_short,
+                    extra_names=mention_extra,
                 )
             else:
                 channel_index = packet.get("channel", 0)
@@ -489,6 +527,8 @@ class MeshtasticAdapter(BasePlatformAdapter):
                     require_mention=require_mention,
                     is_direct=False,
                     is_authorized_command=False,
+                    short_name=mention_short,
+                    extra_names=mention_extra,
                 )
 
             if not gate.allowed:
@@ -736,6 +776,36 @@ def _config_value(config: Any, env_name: str, key: str, default: Any = "") -> An
     return os.getenv(env_name) or extra.get(key, default)
 
 
+def _effective_env(extra: Any) -> Dict[str, str]:
+    """The settings as the plugin will actually see them.
+
+    Env wins over ``config.yaml`` (the Hermes convention this plugin
+    follows), but a value present only in ``extra`` still satisfies a
+    requirement — an operator who configured everything in ``config.yaml``
+    must not be told a variable is missing.
+    """
+    extra = extra or {}
+    env: Dict[str, str] = {}
+    for env_name, key in (
+        ("MESHTASTIC_TRANSPORT", "transport"),
+        ("MESHTASTIC_SERIAL_PORT", "serial_port"),
+        ("MESHTASTIC_TCP_HOST", "tcp_host"),
+        ("MESHTASTIC_TCP_PORT", "tcp_port"),
+        ("MESHTASTIC_NODE_NAME", "node_name"),
+        ("MESHTASTIC_HOME_CHANNEL", "home_channel"),
+        ("MESHTASTIC_ALLOW_ALL_USERS", "allow_all_users"),
+        ("MESHTASTIC_ALLOWED_USERS", "allowed_users"),
+        ("MESHTASTIC_EXPOSE_POSITION", "expose_position"),
+        ("MESHTASTIC_AUTO_INSTALL", "auto_install"),
+    ):
+        value = os.getenv(env_name)
+        if value is None or not str(value).strip():
+            candidate = extra.get(key)
+            value = "" if candidate is None else str(candidate)
+        env[env_name] = str(value)
+    return env
+
+
 def validate_config(config: Any) -> bool:
     """Validate transport coherence.  Port of ``config-schema.ts``.
 
@@ -743,28 +813,19 @@ def validate_config(config: Any) -> bool:
     a silent False would leave the user with no idea what is wrong.
     """
     extra = getattr(config, "extra", {}) or {}
-    transport = str(_config_value(config, "MESHTASTIC_TRANSPORT", "transport", "serial")).strip().lower()
 
-    if transport in ("ble", "mqtt"):
-        logger.error(
-            "Meshtastic: transport '%s' is not supported in v1 — see ROADMAP.md. "
-            "Use transport: serial or transport: tcp.",
-            transport,
-        )
+    # Transport coherence and every conditional env requirement come from
+    # one shared rule set (envcheck.ENV_RULES) so the wizard, the installer
+    # check and this function can never drift apart.  ``config.yaml`` can
+    # supply what the env does not, so the settings resolved from both are
+    # what gets checked — not os.environ alone.
+    env_problem = validate_env(_effective_env(extra), scope="runtime")
+    if env_problem:
+        logger.error("Meshtastic: %s", env_problem)
         return False
 
-    if transport not in ("serial", "tcp"):
-        logger.error("Meshtastic: unknown transport '%s' (expected 'serial' or 'tcp')", transport)
-        return False
-
-    if transport == "tcp" and not _config_value(config, "MESHTASTIC_TCP_HOST", "tcp_host"):
-        logger.error("Meshtastic: transport 'tcp' requires tcp_host (MESHTASTIC_TCP_HOST)")
-        return False
-
-    if transport == "serial":
-        # A missing port is allowed: the library autodetects a single
-        # attached radio, which is the common single-device case.
-        pass
+    # A missing serial port is deliberately allowed: the library autodetects
+    # a single attached radio, which is the common single-device case.
 
     dm_policy = str(extra.get("dm_policy") or "pairing").lower()
     if dm_policy not in ("open", "pairing", "allowlist", "disabled"):
@@ -841,6 +902,7 @@ def _env_enablement() -> Optional[dict]:
     for env_name, key in (
         ("MESHTASTIC_SERIAL_PORT", "serial_port"),
         ("MESHTASTIC_TCP_HOST", "tcp_host"),
+        ("MESHTASTIC_TCP_PORT", "tcp_port"),
         ("MESHTASTIC_NODE_NAME", "node_name"),
     ):
         value = os.getenv(env_name, "").strip()
@@ -926,7 +988,10 @@ async def _standalone_send(
     iface = None
     try:
         iface = await tp.open_interface(
-            transport=transport, serial_port=serial_port, tcp_host=tcp_host
+            transport=transport,
+            serial_port=serial_port,
+            tcp_host=tcp_host,
+            tcp_port=resolve_tcp_port(extra=extra),
         )
     except Exception as e:
         return {"error": f"Meshtastic standalone connect failed: {e}"}
@@ -981,7 +1046,11 @@ def register(ctx: Any) -> None:
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=is_connected,
-        required_env=["MESHTASTIC_TRANSPORT"],
+        # Only the unconditionally-required vars: Hermes prompts for these
+        # generically.  MESHTASTIC_TCP_HOST is required too, but only when
+        # transport is tcp, which this list cannot express — check_env_ready
+        # / envcheck.ENV_RULES enforce that.
+        required_env=["MESHTASTIC_TRANSPORT", "MESHTASTIC_ALLOW_ALL_USERS"],
         install_hint="pip install meshtastic",
         setup_fn=_interactive_setup,
         env_enablement_fn=_env_enablement,
@@ -1004,6 +1073,22 @@ def register(ctx: Any) -> None:
         from mesh_tools import register_tools  # type: ignore[no-redef]
 
     register_tools(ctx)
+
+
+def check_env_ready() -> bool:
+    """Whether the configuration is complete enough to install.
+
+    Install scope: this is the gate the generic (non-wizard) install path
+    needs, because ``plugin.yaml``'s ``requires_env`` cannot express a
+    conditional requirement and so never prompts for the host that a tcp
+    install cannot run without.  Logs every problem before returning False
+    — a bare bool leaves the operator with nothing to act on.
+    """
+    problem = validate_env(scope="install")
+    if problem:
+        logger.error("Meshtastic: %s", problem)
+        return False
+    return True
 
 
 def _interactive_setup() -> None:
