@@ -107,7 +107,17 @@ class FakeMeshInterface:
         region: str = "US",
         nodes: Optional[Dict[str, Any]] = None,
         fail_send: bool = False,
+        air: Optional["SharedAir"] = None,
     ) -> None:
+        self.my_node_num = my_node_num
+        self.my_node_id = node_num_to_hex(my_node_num)
+        # When attached to a SharedAir, everything this radio transmits is
+        # also received by the *other* radios on it — which is what makes a
+        # two-bot feedback loop reproducible in a test.  Left None, this
+        # class behaves exactly as it always has.
+        self.air = air
+        if air is not None:
+            air.attach(self)
         self.myInfo = _FakeMyInfo(my_node_num)
         self.nodes: Dict[str, Any] = nodes if nodes is not None else _default_nodes()
         self.localConfig = _FakeLocalConfig(region)
@@ -135,7 +145,15 @@ class FakeMeshInterface:
                     channel_index=kwargs.get("channelIndex", 0),
                 )
             )
-        return {"id": len(self.sent)}
+            frame_id = len(self.sent)
+        if self.air is not None:
+            self.air.transmit(
+                self,
+                text,
+                destination_id=kwargs.get("destinationId"),
+                channel_index=kwargs.get("channelIndex", 0),
+            )
+        return {"id": frame_id}
 
     def close(self) -> None:
         self.closed = True
@@ -195,6 +213,37 @@ class FakeMeshInterface:
         thread.start()
         return thread
 
+    def deliver(
+        self,
+        text: str,
+        from_num: int,
+        channel: int = 0,
+        packet_id: int = 0,
+    ) -> None:
+        """Receive a frame that another radio put on the air.
+
+        Publishes on the real ``TOPIC_RECEIVE_TEXT`` with ``interface=self``,
+        so the receiving adapter's genuine ``_is_ours`` filter decides
+        whether it is listening — the same check that stops one adapter from
+        seeing another's traffic in production.
+        """
+        from pubsub import pub
+
+        from_id = node_num_to_hex(from_num)
+        packet = {
+            "from": from_num,
+            "to": BROADCAST_NUM,
+            "id": packet_id,
+            "channel": channel,
+            "rxSnr": 6.25,
+            "rxRssi": -95,
+            "hopLimit": 3,
+            "fromId": from_id,
+            "toId": "^all",
+            "decoded": {"portnum": "TEXT_MESSAGE_APP", "text": text},
+        }
+        pub.sendMessage(TOPIC_RECEIVE_TEXT, packet=packet, interface=self)
+
     def inject_connection_established(self) -> None:
         from pubsub import pub
 
@@ -241,3 +290,95 @@ class FakeMeshInterface:
             "decoded": {"portnum": "TELEMETRY_APP", "telemetry": telemetry},
         }
         pub.sendMessage(TOPIC_RECEIVE_TELEMETRY, packet=packet, interface=self)
+
+
+class SharedAir:
+    """One RF channel that several :class:`FakeMeshInterface` radios share.
+
+    The point of this class is to make the runaway-loop scenario
+    reproducible: a frame transmitted by one radio is delivered to every
+    *other* radio attached to the air, exactly as a real broadcast on a
+    Meshtastic channel would be.  Two bots with ``require_mention`` false
+    will therefore answer each other through it, and the only thing that can
+    stop them is the loop-prevention policy under test.
+
+    A transmission budget is enforced.  Without it a regression in the
+    policy would not fail the test — it would hang the suite, or fill memory
+    until the runner was killed, which is a far worse failure mode than an
+    assertion.  ``TransmissionBudgetExceeded`` turns a runaway into an
+    immediate, legible failure.
+    """
+
+    def __init__(self, max_transmissions: int = 50) -> None:
+        self.radios: List[FakeMeshInterface] = []
+        self.log: List[Dict[str, Any]] = []
+        self.max_transmissions = max_transmissions
+        self._lock = threading.RLock()
+        self._next_packet_id = 1000
+
+    def attach(self, radio: "FakeMeshInterface") -> None:
+        with self._lock:
+            if radio not in self.radios:
+                self.radios.append(radio)
+
+    @property
+    def transmission_count(self) -> int:
+        with self._lock:
+            return len(self.log)
+
+    @property
+    def texts(self) -> List[str]:
+        with self._lock:
+            return [entry["text"] for entry in self.log]
+
+    def transmit(
+        self,
+        source: "FakeMeshInterface",
+        text: str,
+        destination_id: Optional[str] = None,
+        channel_index: int = 0,
+    ) -> None:
+        """Put one frame on the air and deliver it to every other radio."""
+        with self._lock:
+            packet_id = self._next_packet_id
+            self._next_packet_id += 1
+            self.log.append({
+                "from": source.my_node_id,
+                "text": text,
+                "destination_id": destination_id,
+                "channel_index": channel_index,
+            })
+            over_budget = len(self.log) > self.max_transmissions
+            listeners = [r for r in self.radios if r is not source]
+
+        if over_budget:
+            raise TransmissionBudgetExceeded(
+                f"more than {self.max_transmissions} transmissions on the shared "
+                f"channel — the exchange is not terminating"
+            )
+
+        # A DM is not delivered to the whole air.
+        if destination_id:
+            return
+
+        for radio in listeners:
+            radio.deliver(text, from_num=source.my_node_num,
+                          channel=channel_index, packet_id=packet_id)
+
+    def seed(self, text: str, from_num: int = PEER_NODE_NUM, channel: int = 0) -> None:
+        """Inject a human's message, heard by every radio on the air."""
+        with self._lock:
+            packet_id = self._next_packet_id
+            self._next_packet_id += 1
+            radios = list(self.radios)
+        for radio in radios:
+            radio.deliver(text, from_num=from_num, channel=channel,
+                          packet_id=packet_id)
+
+
+class TransmissionBudgetExceeded(RuntimeError):
+    """Raised when a shared channel carries more frames than the test allows.
+
+    Failing loudly beats hanging: a broken loop guard should produce a red
+    test in seconds, not a wedged suite.
+    """

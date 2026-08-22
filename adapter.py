@@ -539,6 +539,21 @@ class MeshtasticAdapter(BasePlatformAdapter):
             if not body.strip():
                 return
 
+            # Loop prevention.  Two Hermes bots on one channel with
+            # require_mention false will otherwise answer each other
+            # forever.  Both controls are evaluated here, at the *reply
+            # decision*, rather than at send time: suppressing before
+            # handle_message() saves the agent round-trip as well as the
+            # airtime, and the inbound channel and text — which is what
+            # both controls key on — are only available here.  The hard
+            # rate limit stays down in the send path as the backstop that
+            # no caller can route around.  See sendpolicy's docstring.
+            if chat_type == "group":
+                if not sp.cooldown_ok(chat_id, was_mentioned=gate.was_mentioned):
+                    return  # suppressed silently; sendpolicy logged why
+                if sp.loop_signature_seen(chat_id, body):
+                    return
+
             source = self.build_source(
                 chat_id=chat_id,
                 chat_name=chat_name,
@@ -619,6 +634,35 @@ class MeshtasticAdapter(BasePlatformAdapter):
                 success=False,
                 error=f"{e}. Available channels: {available}",
             )
+
+        # The hard backstop.  sendpolicy's docstring promises that all three
+        # send paths share one gate, but this one — the gateway's own reply
+        # path — was not calling it, which left the busiest path uncapped.
+        # It is checked here, after the target resolves, so a mis-addressed
+        # send does not spend a token it never transmits.
+        if not sp.rate_limit_ok():
+            return SendResult(
+                success=False,
+                error=(
+                    f"rate limit exceeded ({sp.rate_limit_max_sends()} sends per "
+                    f"{int(sp.rate_limit_window_seconds())}s) — airtime is a "
+                    "shared, regulated resource"
+                ),
+            )
+
+        # Start this channel's conversation cooldown.  Recorded for every
+        # outbound path that reaches the radio (this covers the gateway
+        # reply and mesh_send, which funnels through here), so an agent
+        # cannot keep a channel hot by choosing a different tool.
+        #
+        # Deliberately recorded *before* transmitting rather than after a
+        # confirmed success: a multi-chunk send that fails halfway has still
+        # put frames on the air, and a loop guard that only counted fully
+        # successful sends would let a flapping radio loop freely.  The cost
+        # is that a failed send also silences the channel for the cooldown —
+        # the safe direction to err in when the resource is regulated airtime.
+        if is_channel_target(target):
+            sp.note_channel_reply(channel_name_from_target(target) or chat_id)
 
         last_id: Optional[str] = None
         for index, chunk in enumerate(chunks):
@@ -916,11 +960,17 @@ async def _standalone_send(
     if not sp.rate_limit_ok():
         return {
             "error": (
-                f"rate limit exceeded ({sp.RATE_LIMIT_MAX_SENDS} sends per "
-                f"{int(sp.RATE_LIMIT_WINDOW_SECONDS)}s) — airtime is a "
+                f"rate limit exceeded ({sp.rate_limit_max_sends()} sends per "
+                f"{int(sp.rate_limit_window_seconds())}s) — airtime is a "
                 "shared, regulated resource"
             )
         }
+
+    # Cron and send_message reach the radio here.  They must arm the same
+    # per-channel cooldown as the reply path, or a scheduled job could keep
+    # a channel hot while the gateway believes it is quiet.
+    if is_channel_target(target):
+        sp.note_channel_reply(channel_name_from_target(target))
 
     try:
         limit = int(extra.get("text_chunk_limit", MESHTASTIC_CHUNK_LIMIT))

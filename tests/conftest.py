@@ -236,5 +236,36 @@ def _clean_env(monkeypatch):
         "MESHTASTIC_ALLOW_ALL_USERS",
         "MESHTASTIC_HOME_CHANNEL",
         "MESHTASTIC_EXPOSE_POSITION",
+        # Loop prevention. These change whether a reply happens at all, so a
+        # stray value in the dev shell would make unrelated tests silently
+        # stop asserting anything.
+        "MESHTASTIC_CONVERSATION_COOLDOWN_SECONDS",
+        "MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS",
+        "MESHTASTIC_LOOP_DETECTION",
+        "MESHTASTIC_LOOP_SIGNATURE_TTL_SECONDS",
+        "MESHTASTIC_LOOP_SIGNATURE_MAX_ENTRIES",
+        "MESHTASTIC_RATE_LIMIT_MAX_SENDS",
+        "MESHTASTIC_RATE_LIMIT_WINDOW_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _clean_send_state():
+    """Reset the process-global send gates between tests.
+
+    The rate-limit window, the per-channel conversation cooldown and the
+    loop-signature cache all live at module scope in ``sendpolicy`` — they
+    have to, because every send path shares one gate. That makes them leak
+    across tests: a test that sends five times would otherwise exhaust the
+    bucket for the next one, and a test that replies on ``LongFast`` would
+    leave that channel in cooldown so the following test's reply is
+    suppressed and its assertion quietly passes on an empty list.
+    """
+    import sendpolicy as sp
+
+    sp.reset_rate_limit()
+    sp.reset_loop_state()
+    yield
+    sp.reset_rate_limit()
+    sp.reset_loop_state()

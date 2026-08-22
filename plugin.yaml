@@ -54,3 +54,32 @@ optional_env:
     description: "Include GPS positions in tool output (default true; positions are always rounded)"
     prompt: "Expose node positions? (true/false)"
     password: false
+  # Loop prevention. All have safe defaults; none block an install.
+  - name: MESHTASTIC_CONVERSATION_COOLDOWN_SECONDS
+    description: "Quiet period per channel after the bot replies (default 60; 0 or negative disables)"
+    prompt: "Conversation cooldown (seconds)"
+    password: false
+  - name: MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS
+    description: "Let a message naming the bot skip the conversation cooldown (default false)"
+    prompt: "Exempt mentions from the cooldown? (true/false)"
+    password: false
+  - name: MESHTASTIC_LOOP_DETECTION
+    description: "Refuse to answer the same text twice on a channel (default false)"
+    prompt: "Enable loop-signature detection? (true/false)"
+    password: false
+  - name: MESHTASTIC_LOOP_SIGNATURE_TTL_SECONDS
+    description: "How long a message signature is remembered (default 600)"
+    prompt: "Loop signature TTL (seconds)"
+    password: false
+  - name: MESHTASTIC_LOOP_SIGNATURE_MAX_ENTRIES
+    description: "Hard cap on the loop-signature cache (default 256)"
+    prompt: "Loop signature cache size"
+    password: false
+  - name: MESHTASTIC_RATE_LIMIT_MAX_SENDS
+    description: "Hard cap on transmissions per window across every send path (default 5)"
+    prompt: "Rate limit: max sends"
+    password: false
+  - name: MESHTASTIC_RATE_LIMIT_WINDOW_SECONDS
+    description: "Rate-limit window in seconds (default 60)"
+    prompt: "Rate limit: window (seconds)"
+    password: false
