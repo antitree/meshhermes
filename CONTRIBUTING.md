@@ -120,6 +120,66 @@ confusing intermittent failures:
 4. Describe *why* in the commit message; the diff already shows what.
 5. Note explicitly if you verified against a real radio, and which model.
 
+**Do not bump the version in your PR.** CI does it after the merge — see
+below. A PR that edits the version will conflict with the next one that
+does the same, which is exactly the problem the automation removes.
+
+## Versioning and releases
+
+The version is declared in three files — `pyproject.toml`, `plugin.yaml`
+and `__init__.py` — and `TestVersionConsistency` fails if they disagree.
+Nothing keeps them in sync by hand, so `scripts/bump_version.py` is the
+single writer: it updates all three or none of them, and both workflows
+call it rather than editing files themselves.
+
+```bash
+python scripts/bump_version.py --current      # print the current version
+python scripts/bump_version.py patch --dry-run
+```
+
+### Automatic patch bump (`1.0.6` → `1.0.7`)
+
+`.github/workflows/version-bump.yml` runs when a PR is **merged** into
+`main`. It bumps the third position of the version, adds a stub CHANGELOG
+section, commits to `main`, and creates a tag (`v1.0.7`).
+
+It runs on merge rather than on the PR branch on purpose: two PRs open at
+once would otherwise both bump to the same number, and the second would
+land a version that was already taken.
+
+The bump commit is made with `GITHUB_TOKEN`, and GitHub does not trigger
+workflows from `GITHUB_TOKEN` pushes — so the commit to `main` cannot
+retrigger the bump. The commit message also carries `[skip ci]`, and the
+job refuses to act on a HEAD that is already a bump commit, so the loop
+stays closed even if the token is later swapped for a PAT.
+
+Add the `skip-version-bump` label to a PR that should not bump anything
+(a docs-only or CI-only change).
+
+### Manual minor release (`1.0.7` → `1.1.0`)
+
+`.github/workflows/release.yml` is triggered by hand from the Actions tab
+(**Run workflow**). It bumps the second position, zeroes the third, runs
+the suite, tags, and **publishes a GitHub Release** with notes taken from
+that version's `CHANGELOG.md` section. It takes a `dry_run` input that
+prints the bump without committing anything.
+
+Patch bumps only tag; the minor release is the only thing that publishes.
+That keeps the Releases page a list of releases worth reading rather than
+one entry per merged PR.
+
+There is deliberately no major (`2.0.0`) bump. That is a decision to make
+by hand.
+
+### Writing the CHANGELOG
+
+The automatic bump inserts only a stub entry pointing at the compare view —
+it has no way to know what a merged PR actually changed, and it has to
+insert *something* because `test_changelog_documents_the_current_version`
+asserts the current version has a section. Before cutting a minor release,
+replace the accumulated stubs with real notes: those are what the GitHub
+Release will quote.
+
 ## Security
 
 Please do not open a public issue for a security problem — see
