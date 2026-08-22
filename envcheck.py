@@ -2,21 +2,22 @@
 
 Hermes' generic installer reads ``requires_env`` from ``plugin.yaml`` and
 prompts for whatever it finds there.  That schema has no way to say "this
-variable is required *only when* another one has a particular value", so
-everything conditional had to live in ``optional_env`` — and an install
-would complete happily with ``MESHTASTIC_TRANSPORT=tcp`` and no host, only
-to fail at connect time with the radio out of reach.
+variable is required *only when* another one has a particular value", so a
+flat install-time prompt list can only under-ask (a tcp install with no
+host) or over-ask (a serial operator made to supply a TCP host).
 
-Rather than invent a ``required_if:`` key and hope the Hermes loader
-honours it (we do not control that loader), the conditional rules live
-here, in the plugin, and are enforced on the paths this repo owns:
+``plugin.yaml`` therefore declares no ``requires_env`` at all: the install
+is silent, and ``hermes gateway setup`` — the one configuration path we can
+verify Hermes actually invokes, via ``setup_fn`` — gathers everything.  The
+conditional rules live here, in the plugin, and are enforced on the paths
+this repo owns:
 
 - :func:`validate_env` runs from the setup wizard, so the interactive path
   cannot save an incoherent configuration;
 - it also runs from ``adapter.validate_config`` and
-  ``MeshtasticAdapter.connect``, so an install assembled by hand — or by
-  the generic installer that never asked — fails loudly and early with a
-  message naming the exact variable and both ways to set it.
+  ``MeshtasticAdapter.connect``, so a configuration assembled by hand — or
+  a gateway started before the wizard was ever run — fails loudly and
+  early with a message naming the exact variable and both ways to set it.
 
 Rules are data, not code paths: add an entry to :data:`ENV_RULES` and every
 consumer picks it up.
@@ -91,7 +92,8 @@ class EnvRule(NamedTuple):
     name: str
     #: Why this variable exists, in the operator's terms.
     summary: str
-    #: When this returns True and the variable is unset, install is blocked.
+    #: When this returns True and the variable is unset, the configuration
+    #: is incomplete and is reported as a problem.
     required_when: Callable[[Mapping[str, str]], bool] = lambda env: False
     #: Human-readable statement of the condition, used in error text.
     condition: str = "always"
@@ -99,12 +101,13 @@ class EnvRule(NamedTuple):
     validate: Optional[Callable[[str], Optional[str]]] = None
     #: What to do about it, shown verbatim to the operator.
     remedy: str = ""
-    #: Which checks enforce this rule.  ``"install"`` rules block an
-    #: install but not a running gateway; ``"runtime"`` rules also stop
-    #: ``connect()``.  The distinction matters on upgrade: an operator who
+    #: Which checks enforce this rule.  ``"install"`` rules are reported by
+    #: the full configuration check but do not stop a running gateway;
+    #: ``"runtime"`` rules also stop ``connect()``.  The distinction matters
+    #: on upgrade: an operator who
     #: expressed their access policy in ``config.yaml`` (dm_policy /
     #: allow_from) has already made a deliberate choice, and must not be
-    #: locked out of a working deployment by a new prompt-time requirement.
+    #: locked out of a working deployment by a newly-tightened requirement.
     #: Anything that makes the radio physically unreachable is "runtime".
     scope: str = "runtime"
 
@@ -137,8 +140,8 @@ def _validate_tcp_port(value: str) -> Optional[str]:
     return None
 
 
-#: Every ``MESHTASTIC_*`` variable the plugin reads, and whether it blocks
-#: an install.  Ordered so the transport — which every other rule keys off
+#: Every ``MESHTASTIC_*`` variable the plugin reads, and whether it is
+#: mandatory.  Ordered so the transport — which every other rule keys off
 #: — is reported first when several are wrong at once.
 ENV_RULES: Sequence[EnvRule] = (
     EnvRule(
@@ -352,7 +355,7 @@ def validate_env(
 
 
 def describe_requirements() -> List[str]:
-    """Human-readable one-liners for the rules that can block an install."""
+    """Human-readable one-liners for the rules that can ever be mandatory."""
     return [
         f"{rule.name} — required {rule.condition}. {rule.summary}"
         for rule in ENV_RULES
