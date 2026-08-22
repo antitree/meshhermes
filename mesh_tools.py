@@ -55,10 +55,18 @@ _NO_GATEWAY = "Meshtastic gateway is not running"
 
 # Rate limiting and send authorization live in sendpolicy so that every
 # outbound path shares one gate — see that module's docstring.
+#
+# The limits are operator-overridable at runtime, so these must be *live*
+# views rather than values snapshotted at import.  A plain
+# ``_X = sp.RATE_LIMIT_MAX_SENDS`` would silently freeze whatever the
+# environment happened to say when this module was first imported, and the
+# error messages below would then quote a limit the gate is not applying.
 _RATE_LIMIT_MAX_SENDS = sp.RATE_LIMIT_MAX_SENDS
 _RATE_LIMIT_WINDOW_SECONDS = sp.RATE_LIMIT_WINDOW_SECONDS
 _rate_limit_ok = sp.rate_limit_ok
 _reset_rate_limit = sp.reset_rate_limit
+_rate_limit_max_sends = sp.rate_limit_max_sends
+_rate_limit_window_seconds = sp.rate_limit_window_seconds
 
 
 # Strong references to in-flight fire-and-forget sends.  asyncio only holds a
@@ -346,8 +354,8 @@ def mesh_send_handler(args: Dict[str, Any], **kwargs: Any) -> str:
 
         if not _rate_limit_ok():
             return _err(
-                f"rate limit exceeded ({_RATE_LIMIT_MAX_SENDS} sends per "
-                f"{int(_RATE_LIMIT_WINDOW_SECONDS)}s) — airtime is a shared, "
+                f"rate limit exceeded ({_rate_limit_max_sends()} sends per "
+                f"{int(_rate_limit_window_seconds())}s) — airtime is a shared, "
                 "regulated resource",
                 target=target,
             )

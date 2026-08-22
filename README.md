@@ -118,6 +118,17 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
 | `MESHTASTIC_EXPOSE_POSITION` | no | default `true`; `false` hides GPS in tool output |
 | `MESHTASTIC_AUTO_INSTALL` | no | default `false`; `true` pip-installs `meshtastic` on connect if missing |
+| `MESHTASTIC_CONVERSATION_COOLDOWN_SECONDS` | no | default `60`; quiet period per channel after the bot replies. `0` or negative disables it |
+| `MESHTASTIC_COOLDOWN_EXEMPT_MENTIONS` | no | default `false`; `true` lets a message that names the bot skip the cooldown |
+| `MESHTASTIC_LOOP_DETECTION` | no | default `false`; `true` refuses to answer the same text twice on a channel |
+| `MESHTASTIC_LOOP_SIGNATURE_TTL_SECONDS` | no | default `600`; how long a message signature is remembered |
+| `MESHTASTIC_LOOP_SIGNATURE_MAX_ENTRIES` | no | default `256`; hard cap on the signature cache |
+| `MESHTASTIC_RATE_LIMIT_MAX_SENDS` | no | default `5`; hard cap on transmissions per window, across every send path |
+| `MESHTASTIC_RATE_LIMIT_WINDOW_SECONDS` | no | default `60`; the rate-limit window |
+
+Invalid values for any of these (non-numeric, zero, negative where that makes no
+sense) fall back to the default with a warning in the log. A typo never turns a
+limit off.
 
 The required variables are checked before the gateway connects, so a
 configuration that cannot reach the radio is refused with a message naming the
