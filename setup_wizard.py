@@ -1,5 +1,12 @@
 """Interactive setup for ``hermes gateway setup``.
 
+This is **the** configuration path for MeshHermes.  Installing the plugin
+asks nothing: a flat list of install-time prompts cannot express "a TCP
+host is mandatory, but only once you have chosen tcp", so it can only
+under-ask or over-ask.  This wizard knows the conditional rules — it shares
+them with the runtime via :mod:`envcheck` — and re-validates what it wrote
+before reporting success.
+
 Ports MeshClaw's wizard, minus two steps that are deliberately absent:
 
 - **No region step.**  Setting the LoRa region from a plugin is a legal and

@@ -47,7 +47,8 @@ class TestPlatformRegistration:
         entry = registered.platforms[0]
         assert entry["name"] == "meshtastic"
         assert entry["label"] == "Meshtastic"
-        assert entry["emoji"] == "📻"
+        # The gateway's icon: a bunny rabbit, matching plugin.yaml's `icon:`.
+        assert entry["emoji"] == "🐰"
 
     def test_factory_builds_an_adapter(self, registered):
         from dataclasses import dataclass, field
@@ -69,6 +70,26 @@ class TestPlatformRegistration:
         assert entry["env_enablement_fn"] is adapter_mod._env_enablement
         assert entry["standalone_sender_fn"] is adapter_mod._standalone_send
         assert callable(entry["setup_fn"])
+
+    def test_registration_declares_no_required_env(self, registered):
+        """The other install-prompt surface, and it must stay empty too.
+
+        ``required_env`` on the registration is the same flat list as
+        ``plugin.yaml``'s ``requires_env`` and has the same defect. Leaving
+        it out is what keeps the install silent even if the manifest were
+        read differently.
+        """
+        entry = registered.platforms[0]
+        assert not entry.get("required_env")
+
+    def test_setup_fn_is_the_wizard(self, registered):
+        """`hermes gateway setup` is the canonical configuration path.
+
+        It is also the only configuration hook whose invocation by Hermes
+        we can actually verify, which is why the plugin routes everything
+        through it rather than an install-time hook.
+        """
+        assert registered.platforms[0]["setup_fn"] is adapter_mod._interactive_setup
 
     def test_cron_and_auth_env_vars(self, registered):
         entry = registered.platforms[0]
@@ -130,14 +151,55 @@ class TestManifest:
     def test_name_follows_ecosystem_convention(self, manifest):
         assert manifest["name"] == "meshtastic-platform"
 
-    def test_requires_transport_env(self, manifest):
-        names = {e["name"] for e in manifest["requires_env"]}
-        assert "MESHTASTIC_TRANSPORT" in names
+    def test_declares_no_mandatory_install_prompts(self, manifest):
+        """The install must ask nothing.
 
-    def test_optional_env_documented(self, manifest):
+        Hermes' generic installer prompts for whatever it finds in
+        ``requires_env``.  A flat list cannot say "a TCP host is mandatory,
+        but only once you have chosen tcp", so it can only under-ask or
+        over-ask.  Configuration lives in ``hermes gateway setup`` instead,
+        and the manifest must not resurrect a prompt list.
+
+        The key is *omitted*, not empty: an empty YAML value parses as
+        ``None``, which a loader iterating it would trip over.
+        """
+        assert "requires_env" not in manifest
+        assert manifest.get("requires_env") is None
+
+    def test_every_variable_the_plugin_reads_is_documented(self, manifest):
+        """Moving out of requires_env must not lose the documentation.
+
+        Every rule in ``envcheck.ENV_RULES`` — including the two that used
+        to be prompted for — has to remain described in ``optional_env``.
+        """
+        import envcheck
+
         names = {e["name"] for e in manifest["optional_env"]}
+        assert {rule.name for rule in envcheck.ENV_RULES} <= names
+        # The two that PR #1 promoted into requires_env, explicitly.
+        assert {"MESHTASTIC_TRANSPORT", "MESHTASTIC_ALLOW_ALL_USERS"} <= names
         assert {"MESHTASTIC_SERIAL_PORT", "MESHTASTIC_TCP_HOST",
                 "MESHTASTIC_HOME_CHANNEL", "MESHTASTIC_EXPOSE_POSITION"} <= names
+
+    def test_icon_is_a_bunny(self, manifest):
+        """The gateway's icon, and it must match what register() passes."""
+        assert manifest["icon"] == "🐰"
+
+    def test_icon_is_a_short_bare_emoji(self, manifest):
+        """No markup, no path — the convention elsewhere is a bare emoji."""
+        icon = manifest["icon"]
+        assert isinstance(icon, str)
+        assert 0 < len(icon) <= 4
+        assert "<" not in icon and "/" not in icon
+
+    def test_icon_matches_the_registered_emoji(self, manifest, registered):
+        """One icon, two surfaces — they must not drift apart."""
+        assert registered.platforms[0]["emoji"] == manifest["icon"]
+
+    def test_manifest_still_parses_with_the_icon_key(self, manifest):
+        """A guard that the added key did not break the document."""
+        assert manifest["kind"] == "platform"
+        assert manifest["name"] == "meshtastic-platform"
 
     def test_every_env_entry_is_fully_described(self, manifest):
         for key in ("requires_env", "optional_env"):
@@ -161,3 +223,66 @@ class TestEnvEnablement:
         assert seed["tcp_host"] == "radio.local"
         # home_channel is turned into a HomeChannel by the core hook.
         assert seed["home_channel"]["chat_id"] == "channel:LongFast"
+
+
+class TestPostInstallGuidance:
+    """The install asks nothing, so it must say what to do next.
+
+    Whether Hermes surfaces this string during ``hermes plugins install``
+    is not something this repo can prove — there is no verified post-install
+    hook. README.md is the guaranteed source of truth. These tests pin the
+    text the plugin exposes so the two cannot disagree.
+    """
+
+    def test_message_names_the_three_steps_in_order(self):
+        message = adapter_mod.post_install_message()
+        lowered = message.lower()
+        for step in ("enable", "hermes gateway setup", "hermes gateway restart"):
+            assert step in lowered
+        assert lowered.index("enable") < lowered.index("hermes gateway setup")
+        assert lowered.index("hermes gateway setup") < lowered.index(
+            "hermes gateway restart"
+        )
+
+    def test_message_is_a_plain_string_constant(self):
+        assert adapter_mod.post_install_message() is adapter_mod.POST_INSTALL_MESSAGE
+        assert isinstance(adapter_mod.POST_INSTALL_MESSAGE, str)
+
+    def test_it_does_not_tell_the_user_to_answer_prompts(self):
+        """The old flow's wording must not survive here."""
+        lowered = adapter_mod.POST_INSTALL_MESSAGE.lower()
+        assert "prompt" not in lowered
+        assert "answer" not in lowered
+
+    def test_producing_it_prompts_for_nothing(self, monkeypatch):
+        """Calling it must never read stdin — install is non-interactive."""
+        def explode(*args, **kwargs):
+            raise AssertionError("post-install guidance must not prompt")
+
+        monkeypatch.setattr("builtins.input", explode)
+        assert adapter_mod.post_install_message()
+
+    def test_readme_documents_the_same_three_steps(self):
+        """README is the reliable surface, so it must carry the flow."""
+        readme = (PLUGIN_ROOT / "README.md").read_text()
+        assert "hermes plugins install antitree/meshhermes" in readme
+        assert "hermes gateway setup" in readme
+        assert "hermes gateway restart" in readme
+
+
+class TestCheckEnvReadyIsAPureCheck:
+    """It survives as a predicate, not as an interactive install gate."""
+
+    def test_it_never_prompts(self, monkeypatch):
+        def explode(*args, **kwargs):
+            raise AssertionError("check_env_ready must not prompt")
+
+        monkeypatch.setattr("builtins.input", explode)
+        monkeypatch.setenv("MESHTASTIC_TRANSPORT", "tcp")
+        monkeypatch.delenv("MESHTASTIC_TCP_HOST", raising=False)
+        assert adapter_mod.check_env_ready() is False
+
+    def test_it_is_not_wired_into_registration(self, registered):
+        """Nothing hands Hermes an install-time gate to call."""
+        entry = registered.platforms[0]
+        assert adapter_mod.check_env_ready not in entry.values()

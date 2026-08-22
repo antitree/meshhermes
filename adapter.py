@@ -268,11 +268,10 @@ class MeshtasticAdapter(BasePlatformAdapter):
             logger.info("Meshtastic: MESHTASTIC_AUTO_INSTALL set — installing the meshtastic package")
             await asyncio.to_thread(ensure_deps)
 
-        # The generic Hermes installer only prompts for what plugin.yaml
-        # lists in requires_env, and that schema cannot express "required
-        # only when transport is tcp".  So an install can complete while
-        # still being unrunnable; catch that here, before the radio, with a
-        # message naming the variable and how to set it.
+        # Installing this plugin asks no questions at all, so a gateway can
+        # perfectly well be started before `hermes gateway setup` has ever
+        # run.  This is the safety net for that: catch it here, before the
+        # radio, with a message naming the variable and how to set it.
         #
         # Runtime scope blocks only on what makes the radio unreachable.
         # The access-control decision is an install-time requirement:
@@ -1046,11 +1045,12 @@ def register(ctx: Any) -> None:
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=is_connected,
-        # Only the unconditionally-required vars: Hermes prompts for these
-        # generically.  MESHTASTIC_TCP_HOST is required too, but only when
-        # transport is tcp, which this list cannot express — check_env_ready
-        # / envcheck.ENV_RULES enforce that.
-        required_env=["MESHTASTIC_TRANSPORT", "MESHTASTIC_ALLOW_ALL_USERS"],
+        # Deliberately no `required_env`: like plugin.yaml's requires_env,
+        # it is a flat list that cannot express "required only when
+        # transport is tcp", so it can only under-ask or over-ask.  Every
+        # Meshtastic setting is gathered by `hermes gateway setup`
+        # (``setup_fn`` below), which does know the conditional rules.
+        # envcheck.ENV_RULES still enforces them at connect time.
         install_hint="pip install meshtastic",
         setup_fn=_interactive_setup,
         env_enablement_fn=_env_enablement,
@@ -1059,7 +1059,8 @@ def register(ctx: Any) -> None:
         allowed_users_env="MESHTASTIC_ALLOWED_USERS",
         allow_all_env="MESHTASTIC_ALLOW_ALL_USERS",
         max_message_length=MESHTASTIC_CHUNK_LIMIT,
-        emoji="📻",
+        # Kept in sync with plugin.yaml's `icon:` key.
+        emoji="🐰",
         pii_safe=False,
         # Stated rather than inherited: /update over a slow, shared radio
         # link is a deliberate choice, so make it visible in the registration.
@@ -1075,14 +1076,40 @@ def register(ctx: Any) -> None:
     register_tools(ctx)
 
 
-def check_env_ready() -> bool:
-    """Whether the configuration is complete enough to install.
+#: What to do once the plugin is on disk.  The install itself asks
+#: nothing — there is no flat list of questions that is right for both a
+#: serial and a tcp radio — so the whole configuration happens in
+#: ``hermes gateway setup``.
+POST_INSTALL_MESSAGE = (
+    "Next:\n"
+    "  1. enable the plugin\n"
+    "  2. hermes gateway setup\n"
+    "  3. hermes gateway restart"
+)
 
-    Install scope: this is the gate the generic (non-wizard) install path
-    needs, because ``plugin.yaml``'s ``requires_env`` cannot express a
-    conditional requirement and so never prompts for the host that a tcp
-    install cannot run without.  Logs every problem before returning False
-    — a bare bool leaves the operator with nothing to act on.
+
+def post_install_message() -> str:
+    """The guidance to show after the plugin is installed.
+
+    Exposed as a plain function returning a plain string so any caller —
+    a Hermes hook, the wizard, a human reading the source — gets the same
+    text.  It prompts for nothing and has no side effects.
+    """
+    return POST_INSTALL_MESSAGE
+
+
+def check_env_ready() -> bool:
+    """Whether the configuration is complete enough for the gateway to run.
+
+    A pure, non-prompting check, install scope.  It is **not** an install
+    gate: installing this plugin asks no questions and blocks on nothing,
+    because the answers depend on each other in ways a flat prompt list
+    cannot express.  Configuration happens in ``hermes gateway setup``.
+
+    Kept because it is a genuinely useful predicate — "is this env file
+    coherent?" — and it logs every problem before returning False, so a
+    caller that only has a bool still leaves the operator something to act
+    on.  ``connect()`` enforces the runtime subset independently.
     """
     problem = validate_env(scope="install")
     if problem:

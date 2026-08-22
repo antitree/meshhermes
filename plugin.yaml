@@ -2,32 +2,52 @@ name: meshtastic-platform
 label: Meshtastic
 kind: platform
 version: 1.0.0
+# Emoji icon for the gateway, matching the emoji= the adapter passes to
+# ctx.register_platform().  Kept in sync with adapter.register().
+icon: "🐰"
 description: >
   Meshtastic LoRa mesh gateway adapter for Hermes Agent.
   Relays messages between a Meshtastic radio (serial/USB or TCP/WiFi) and
   the Hermes agent, and exposes read-only mesh telemetry tools.
+  Install, enable, then run `hermes gateway setup` to configure it.
 author: MeshHermes contributors
-# Only unconditional requirements can live here: this schema has no way to
-# say "required when MESHTASTIC_TRANSPORT=tcp".  The conditional rules are
-# enforced by the plugin itself (envcheck.py), which blocks an install that
-# would be unable to reach the radio.  Keep this list and envcheck.ENV_RULES
-# in agreement.
-requires_env:
+# There is deliberately no `requires_env:` key.
+#
+# Hermes' generic installer prompts for whatever it finds in requires_env,
+# and this schema has no way to say "required only when
+# MESHTASTIC_TRANSPORT=tcp".  Asking a flat list of questions at install
+# time therefore either under-asks (a tcp install with no host) or
+# over-asks (a serial operator made to supply a TCP host).
+#
+# So the install asks nothing.  `hermes gateway setup` — wired through
+# `setup_fn` in adapter.register(), the one configuration path we can
+# verify actually runs — is the canonical way to configure this plugin, and
+# it knows the conditional rules.  Every variable below is listed as
+# optional_env purely as documentation of what the plugin reads.
+#
+# Nothing is lost by not prompting: the conditional rules in envcheck.py
+# still run from validate_config() and connect(), so a gateway started with
+# a configuration that cannot reach the radio fails immediately with a
+# message naming the variable and the fix.
+#
+# The key is omitted rather than left empty because an empty YAML value
+# parses as null, and a loader that does `for e in manifest["requires_env"]`
+# would raise on None where a missing key can be defaulted with `.get()`.
+optional_env:
   - name: MESHTASTIC_TRANSPORT
-    description: "How to reach the radio: 'serial' (USB) or 'tcp' (WiFi). Choosing 'tcp' also makes MESHTASTIC_TCP_HOST mandatory."
+    description: "How to reach the radio: 'serial' (USB) or 'tcp' (WiFi). Required before the gateway can start; `hermes gateway setup` asks for it."
     prompt: "Transport (serial/tcp)"
     password: false
   - name: MESHTASTIC_ALLOW_ALL_USERS
-    description: "Access control, and a deliberate choice: 'true' lets ANY node in radio range command the bot (dev only); 'false' restricts it to MESHTASTIC_ALLOWED_USERS (an empty list is fine — pair a node later). A radio channel is public and node IDs are not authenticated, so there is no safe default."
+    description: "Access control, and a deliberate choice: 'true' lets ANY node in radio range command the bot (dev only); 'false' restricts it to MESHTASTIC_ALLOWED_USERS (an empty list is fine — pair a node later). A radio channel is public and node IDs are not authenticated, so there is no safe default; `hermes gateway setup` asks for it."
     prompt: "Allow all nodes? (true/false)"
     password: false
-optional_env:
   - name: MESHTASTIC_TCP_HOST
-    description: "Radio hostname or IP for TCP/WiFi (e.g. meshtastic.local). REQUIRED when MESHTASTIC_TRANSPORT=tcp — the plugin refuses to install or connect without it; ignored for serial."
+    description: "Radio hostname or IP for TCP/WiFi (e.g. meshtastic.local). REQUIRED when MESHTASTIC_TRANSPORT=tcp — the gateway refuses to connect without it; ignored for serial. `hermes gateway setup` asks for it when you choose tcp."
     prompt: "TCP host"
     password: false
   - name: MESHTASTIC_TCP_PORT
-    description: "Radio TCP API port (default 4403). Only needed when the radio is not on the standard port, e.g. behind an SSH tunnel or reverse proxy."
+    description: "Radio TCP API port (default 4403). `hermes gateway setup` offers it pre-filled — press enter to keep 4403, or change it when the radio is behind an SSH tunnel or reverse proxy."
     prompt: "TCP port"
     password: false
   - name: MESHTASTIC_SERIAL_PORT
