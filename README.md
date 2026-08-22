@@ -26,14 +26,47 @@ Installs into `~/.hermes/plugins/` and needs **zero changes to Hermes core**.
 ```bash
 hermes plugins install antitree/meshhermes
 pip install meshtastic
+# answer the prompts
+hermes gateway restart
 ```
 
 `hermes plugins install` clones the repo into `~/.hermes/plugins/` and offers to
 enable it. Third-party platform plugins are opt-in, so it stays off until you
 say yes (or pass `--enable`).
 
+The install prompts for the settings the plugin cannot run without —
+`meshtastic-platform requires the following environment variables` — and writes
+your answers to `~/.hermes/.env`:
+
+| Setting | Answer |
+|---|---|
+| `MESHTASTIC_TRANSPORT` | `serial` for a USB radio, `tcp` for one on WiFi |
+| `MESHTASTIC_ALLOW_ALL_USERS` | `false` unless you mean to let every node in radio range command the bot |
+| `MESHTASTIC_TCP_HOST` | the radio's hostname or IP, e.g. `meshtastic.local`. Needed only for `tcp` — leave it blank for `serial`. |
+
+Then restart the gateway and it is running. There is no separate configuration
+step: everything else has a working default.
+
+A value already present in `~/.hermes/.env` is not asked for again, so writing
+those settings there ahead of time makes the install non-interactive.
+
+To change any of it later, or to reach the settings the install does not ask
+about — access-control detail, position privacy, the home channel for cron — run
+the wizard:
+
+```bash
+hermes gateway setup      # choose Meshtastic
+hermes gateway restart
+```
+
+The full list of settings is in [Environment variables](#environment-variables)
+below; the wizard covers the same ground interactively.
+
 <details>
 <summary>Manual install</summary>
+
+A manual install never sees the install prompts, so it needs the configuration
+step the plugin install does for you.
 
 ```bash
 git clone https://github.com/antitree/meshhermes \
@@ -48,16 +81,18 @@ plugins:
   enabled:
     - meshtastic-platform
 ```
-</details>
 
-## Configure
-
-Run the wizard, or write the config by hand:
+Then configure it — the wizard, or the equivalent values in `~/.hermes/.env`:
 
 ```bash
 hermes gateway setup      # choose Meshtastic
 hermes gateway restart
 ```
+</details>
+
+## Configuration
+
+There are a few config options that are requirements, the rest are optional. 
 
 ### Minimal working config
 
@@ -77,14 +112,22 @@ Environment variables take precedence over `config.yaml`.
 | Variable | Required | Notes |
 |---|---|---|
 | `MESHTASTIC_TRANSPORT` | yes | `serial` or `tcp` |
-| `MESHTASTIC_SERIAL_PORT` | serial only | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
-| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local` |
-| `MESHTASTIC_NODE_NAME` | no | mention trigger typed at the start of a message (`@` optional); defaults to the device's `longName`. The radio's real `longName`/`shortName` keep working too. |
-| `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs |
-| `MESHTASTIC_ALLOW_ALL_USERS` | no | dev only — opens the bot to every node in range, **inbound and outbound** |
+| `MESHTASTIC_ALLOW_ALL_USERS` | yes | must be set explicitly: `true` opens the bot to every node in range (dev only), **inbound and outbound**; `false` restricts it to `MESHTASTIC_ALLOWED_USERS` |
+| `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs. Empty is valid — pair a node later. |
+| `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local`. Install and connect both fail without it when `MESHTASTIC_TRANSPORT=tcp`. |
+| `MESHTASTIC_TCP_PORT` | no | default `4403`; set it when the radio is behind a tunnel or reverse proxy |
+| `MESHTASTIC_SERIAL_PORT` | no | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
+| `MESHTASTIC_NODE_NAME` | no | mention trigger; defaults to the device's `longName` |
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
 | `MESHTASTIC_EXPOSE_POSITION` | no | default `true`; `false` hides GPS in tool output |
 | `MESHTASTIC_AUTO_INSTALL` | no | default `false`; `true` pip-installs `meshtastic` on connect if missing |
+
+The required variables are checked before an install completes, so a
+configuration that cannot reach the radio is refused up front rather than
+failing later at connect time — that check is what the install prompts satisfy.
+Anything marked optional above is safe to leave unset: each has a working
+default. Values already in `~/.hermes/.env` satisfy the checks without any
+prompting.
 
 ---
 
@@ -148,11 +191,6 @@ Hermes: Rain likely tomorrow AM, clearing by
 afternoon. High 61F, wind 10-15mph from SW.
 ```
 
-Messages that don't address it are ignored entirely. On a shared channel that
-matters: every reply costs airtime that everyone else is also using.
-
-<!-- Screenshot slot: Meshtastic Android app showing a LongFast exchange with Hermes. -->
-
 ### Talking to it privately
 
 With `dm_policy: pairing`, a new node's first DM creates a pairing request you
@@ -187,40 +225,6 @@ the radio itself:
   is above 60%.
 ```
 
-
-## More documentation
-
-The README covers getting running. The details live alongside it:
-
-| Document | What's in it |
-|---|---|
-| [SECURITY.md](SECURITY.md) | Threat model, what's in and out of scope, how to report a vulnerability, and operator security notes |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, running the tests without hardware, and the non-obvious traps in this codebase |
-| [ROADMAP.md](ROADMAP.md) | BLE and MQTT transports, proactive alerts, and other unbuilt work |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-
-A few things worth knowing before you deploy:
-
-- **Access control is Hermes-native.** `dm_policy` and `group_policy` are
-  enforced by the gateway's own authorization layer and pairing store, not
-  reimplemented here. `dm_policy: open` requires an explicit `"*"` in
-  `allow_from` so a radio is never opened by a config typo.
-- **Node IDs are not authenticated** and channel traffic is readable by anyone
-  holding the channel key. An allowlist raises the bar; it is not identity.
-- **Positions are real people's coordinates.** They are never logged, are
-  rounded to ~11 m in tool output, and can be suppressed entirely with
-  `MESHTASTIC_EXPOSE_POSITION=false`.
-- **BLE and MQTT are not supported yet** — configuring them fails at validation
-  with a clear error rather than silently doing nothing.
-- **A serial port cannot be shared.** If another program holds your radio, or
-  ModemManager probes it on Linux, Hermes cannot open it.
-
-Run the hardware check before trusting a deployment:
-
-```bash
-python scripts/smoke_hardware.py --transport serial --port /dev/ttyUSB0
-```
-
 ## Acknowledgements
 
 **Inspired by [MeshClaw](https://github.com/Seeed-Solution/MeshClaw)** by
@@ -231,14 +235,6 @@ MeshHermes is an independent Python implementation of those ideas for Hermes
 Agent, and its normalization, chunking, and policy modules follow MeshClaw's
 design closely. MeshClaw is MIT licensed.
 
-Thanks also to:
-
-- **[Meshtastic](https://meshtastic.org)** — the open-source LoRa mesh firmware
-  and the [`meshtastic` Python library](https://github.com/meshtastic/python)
-  this plugin is built on. GPL-3.0.
-- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)** by
-  [Nous Research](https://nousresearch.com/) — the agent framework, whose plugin
-  interface made this possible without touching core. MIT licensed.
 
 ## License
 

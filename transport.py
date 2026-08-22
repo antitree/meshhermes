@@ -31,9 +31,17 @@ import concurrent.futures
 import logging
 from typing import Any, Callable, Optional, Tuple
 
+# Shared with the setup wizard and the install-time checks so the default
+# port is stated in exactly one place.
+try:
+    from .envcheck import DEFAULT_TCP_PORT
+except ImportError:  # pragma: no cover - direct-import context
+    from envcheck import DEFAULT_TCP_PORT  # type: ignore[no-redef]
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "DEFAULT_TCP_PORT",
     "TOPIC_RECEIVE_TEXT",
     "TOPIC_CONNECTION_ESTABLISHED",
     "TOPIC_CONNECTION_LOST",
@@ -72,7 +80,12 @@ class TransportError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def _build_interface(transport: str, serial_port: str, tcp_host: str) -> Any:
+def _build_interface(
+    transport: str,
+    serial_port: str,
+    tcp_host: str,
+    tcp_port: int = DEFAULT_TCP_PORT,
+) -> Any:
     """Construct a meshtastic interface.  **Blocking** — call in a thread.
 
     Imported lazily so the plugin module stays importable when the
@@ -95,8 +108,15 @@ def _build_interface(transport: str, serial_port: str, tcp_host: str) -> Any:
         except ImportError as e:  # pragma: no cover - depends on env
             raise TransportError(f"meshtastic package not installed: {e}") from e
         if not tcp_host:
-            raise TransportError("tcp transport requires a host")
-        return TCPInterface(hostname=tcp_host)
+            raise TransportError(
+                "tcp transport requires a host — set MESHTASTIC_TCP_HOST "
+                "(e.g. meshtastic.local) in ~/.hermes/.env, or reconfigure "
+                "with: hermes gateway setup"
+            )
+        # portNumber is keyword-only on TCPInterface and defaults to 4403;
+        # pass it explicitly so a radio behind a tunnel or reverse proxy is
+        # reachable.
+        return TCPInterface(hostname=tcp_host, portNumber=tcp_port)
 
     if kind in ("ble", "mqtt"):
         raise TransportError(
@@ -111,6 +131,7 @@ async def open_interface(
     transport: str = "serial",
     serial_port: str = "",
     tcp_host: str = "",
+    tcp_port: int = DEFAULT_TCP_PORT,
     timeout: float = 60.0,
 ) -> Any:
     """Open a Meshtastic interface without blocking the event loop.
@@ -120,7 +141,9 @@ async def open_interface(
     """
     try:
         return await asyncio.wait_for(
-            asyncio.to_thread(_build_interface, transport, serial_port, tcp_host),
+            asyncio.to_thread(
+                _build_interface, transport, serial_port, tcp_host, tcp_port
+            ),
             timeout=timeout,
         )
     except asyncio.TimeoutError as e:

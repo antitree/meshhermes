@@ -32,6 +32,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `longName`/`shortName` still reach the bot.
 
 ### Added
+- `envcheck.py`: one declarative rule set for which `MESHTASTIC_*` variables
+  are mandatory, including conditional ones. `plugin.yaml`'s schema cannot
+  say "required only when transport is tcp", so an install could complete
+  with `MESHTASTIC_TRANSPORT=tcp` and no host and only fail later at
+  connect. The rules are now enforced by the plugin itself, shared by the
+  setup wizard, `validate_config()`, and `connect()`.
+- `MESHTASTIC_TCP_PORT` (default `4403`) is now read and honoured. The TCP
+  port was previously hardcoded by the library default, so a radio behind
+  an SSH tunnel or reverse proxy was unreachable. The wizard prompts for it
+  during tcp setup.
 - `CONTRIBUTING.md`, `SECURITY.md`, and this changelog.
 - Pre-commit configuration with secret detection, and `.gitignore` rules
   blocking credential files.
@@ -45,6 +55,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PlatformEntry` field.
 
 ### Changed
+- README documents the install flow that actually happens: `hermes plugins
+  install` prompts for the required variables and then asks you to restart
+  the gateway. `hermes gateway setup` was presented as a required
+  configuration step, which no longer matched the install — it is now
+  documented as the reconfigure path, and as the step a *manual* install
+  needs because it never sees the prompts.
+- Every message naming `hermes gateway setup` now says "reconfigure with",
+  so a missing-variable error cannot be read as "your install is
+  incomplete, run the wizard".
+- `MESHTASTIC_ALLOW_ALL_USERS` must now be set explicitly at install time.
+  Left unset it either silently opened the bot to every node in radio range
+  or left it unable to answer anyone, with no indication which. An empty
+  `MESHTASTIC_ALLOWED_USERS` with `MESHTASTIC_ALLOW_ALL_USERS=false` remains
+  valid — the "pair a node later" workflow is unchanged. This is an
+  install-time requirement only, so existing deployments keep running.
+- A missing required variable now fails with a message naming the variable,
+  the condition that made it required, and both ways to set it.
 - Test fixtures use a neutral channel name instead of one from the author's
   own mesh.
 - `MESHTASTIC_ALLOW_ALL_USERS` is now honoured by the outbound send gate,

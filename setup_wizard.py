@@ -17,6 +17,23 @@ from __future__ import annotations
 import os
 from typing import List
 
+# The requirement rules are shared with the install-time check and the
+# adapter so the wizard cannot drift from what is actually enforced.
+try:
+    from .envcheck import (
+        DEFAULT_TCP_PORT,
+        SUPPORTED_TRANSPORTS,
+        UNSUPPORTED_TRANSPORTS,
+        validate_env,
+    )
+except ImportError:  # pragma: no cover - direct-import context
+    from envcheck import (  # type: ignore[no-redef]
+        DEFAULT_TCP_PORT,
+        SUPPORTED_TRANSPORTS,
+        UNSUPPORTED_TRANSPORTS,
+        validate_env,
+    )
+
 
 def _detect_serial_ports() -> List[str]:
     """Best-effort list of attached radios.  Never raises."""
@@ -26,6 +43,21 @@ def _detect_serial_ports() -> List[str]:
         return list(findPorts(True) or [])
     except Exception:
         return []
+
+
+def _saved_env(get_env_value) -> dict:
+    """Read back every rule-governed variable from the env file.
+
+    The wizard writes to ``~/.hermes/.env``, which does not update
+    ``os.environ`` in this process, so the check has to read through the
+    CLI's accessor rather than trusting the ambient environment.
+    """
+    try:
+        from .envcheck import ENV_RULES
+    except ImportError:  # pragma: no cover - direct-import context
+        from envcheck import ENV_RULES  # type: ignore[no-redef]
+
+    return {rule.name: (get_env_value(rule.name) or "") for rule in ENV_RULES}
 
 
 def interactive_setup() -> None:
@@ -59,10 +91,10 @@ def interactive_setup() -> None:
     print_info("   tcp    — radio reachable over WiFi by hostname/IP")
     transport = (prompt("Transport (serial/tcp)", default=existing or "serial") or "").strip().lower()
 
-    if transport in ("ble", "mqtt"):
+    if transport in UNSUPPORTED_TRANSPORTS:
         print_warning(f"'{transport}' is not supported in v1 — see ROADMAP.md. Use serial or tcp.")
         return
-    if transport not in ("serial", "tcp"):
+    if transport not in SUPPORTED_TRANSPORTS:
         print_warning(f"Unknown transport '{transport}' — skipping Meshtastic setup")
         return
     save_env_value("MESHTASTIC_TRANSPORT", transport)
@@ -88,6 +120,17 @@ def interactive_setup() -> None:
             print_warning("A host is required for tcp transport — skipping Meshtastic setup")
             return
         save_env_value("MESHTASTIC_TCP_HOST", tcp_host.strip())
+
+        # Optional — a stock radio listens on 4403.  Prompted anyway
+        # because a radio behind an SSH tunnel or reverse proxy is not on
+        # the default port, and that is invisible until nothing connects.
+        tcp_port = prompt(
+            "Radio TCP port",
+            default=get_env_value("MESHTASTIC_TCP_PORT") or str(DEFAULT_TCP_PORT),
+        )
+        save_env_value(
+            "MESHTASTIC_TCP_PORT", (tcp_port or "").strip() or str(DEFAULT_TCP_PORT)
+        )
 
     # ── Identity ──────────────────────────────────────────────────────────
     print()
@@ -141,6 +184,19 @@ def interactive_setup() -> None:
     print_info("   When exposed, they are rounded to ~11 m in tool output.")
     expose = prompt_yes_no("Expose node positions to the agent?", True)
     save_env_value("MESHTASTIC_EXPOSE_POSITION", "true" if expose else "false")
+
+    # Re-check what was just written against the same rules the installer
+    # and the adapter enforce.  A wizard that reports success on a config
+    # that cannot connect is the exact failure this validation exists to
+    # prevent, so it must verify rather than assume.
+    problem = validate_env(_saved_env(get_env_value))
+    if problem:
+        print()
+        print_warning(problem)
+        print_warning(
+            "Meshtastic is saved but incomplete — rerun: hermes gateway setup"
+        )
+        return
 
     print()
     print_success("Meshtastic configuration saved to ~/.hermes/.env")
