@@ -632,3 +632,39 @@ class TestRegistrationFieldsAreReal:
         adapter_mod.register(Ctx())
         unknown = set(recorded) - valid
         assert not unknown, f"register_platform passes non-existent fields: {unknown}"
+
+
+class TestMentionNames:
+    """Name resolution feeding the mention gate."""
+
+    def test_device_names_used_when_unconfigured(self, connected):
+        a = make_adapter()
+        asyncio.run(a.connect())
+        try:
+            primary, short, extra = a._mention_names()
+            assert primary == "HermesBot"
+            assert short == "HB"
+            assert extra == ()
+        finally:
+            asyncio.run(a.disconnect())
+
+    def test_configured_name_wins_but_device_name_still_triggers(self, monkeypatch):
+        iface = FakeMeshInterface()
+
+        async def _open(**kwargs):
+            return iface
+
+        monkeypatch.setattr(tp, "open_interface", _open)
+        a = make_adapter(node_name="Hermes")
+        asyncio.run(a.connect())
+        try:
+            primary, short, extra = a._mention_names()
+            assert primary == "Hermes"
+            assert short == "HB"
+            assert "HermesBot" in extra
+        finally:
+            asyncio.run(a.disconnect())
+
+    def test_no_interface_yields_no_names(self):
+        a = make_adapter()
+        assert a._mention_names() == (None, None, ())

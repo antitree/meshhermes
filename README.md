@@ -79,7 +79,7 @@ Environment variables take precedence over `config.yaml`.
 | `MESHTASTIC_TRANSPORT` | yes | `serial` or `tcp` |
 | `MESHTASTIC_SERIAL_PORT` | serial only | e.g. `/dev/ttyUSB0`. Blank autodetects a single attached radio. |
 | `MESHTASTIC_TCP_HOST` | tcp only | hostname/IP, e.g. `meshtastic.local` |
-| `MESHTASTIC_NODE_NAME` | no | mention trigger; defaults to the device's `longName` |
+| `MESHTASTIC_NODE_NAME` | no | mention trigger typed at the start of a message (`@` optional); defaults to the device's `longName`. The radio's real `longName`/`shortName` keep working too. |
 | `MESHTASTIC_ALLOWED_USERS` | no | comma-separated `!hex` node IDs |
 | `MESHTASTIC_ALLOW_ALL_USERS` | no | dev only — opens the bot to every node in range, **inbound and outbound** |
 | `MESHTASTIC_HOME_CHANNEL` | no | cron/notification delivery target |
@@ -118,8 +118,27 @@ platforms:
 On the mesh, someone types into the LongFast channel:
 
 ```
-@Hermes what's the weather looking like for tomorrow?
+Hermes what's the weather looking like for tomorrow?
 ```
+
+Meshtastic has no tagging protocol the way Discord or Slack do. Addressing a
+node is just typing its name first, so that is exactly what the gate matches:
+
+| Message | Wakes the agent? | Text the agent sees |
+|---|---|---|
+| `Hermes what's the weather?` | yes | `what's the weather?` |
+| `@Hermes what's the weather?` | yes | `what's the weather?` |
+| `Hermes: what's the weather?` | yes | `what's the weather?` |
+| `Hermes, what's the weather?` | yes | `what's the weather?` |
+| `hermes what's the weather?` | yes | `what's the weather?` |
+| `HRM what's the weather?` (short name) | yes | `what's the weather?` |
+| `ask Hermes about the weather` | no | -- |
+| `Hermes` (bare) | passes the gate, but there is nothing to answer, so no reply | *(empty)* |
+
+The radio's `shortName` triggers too, since typing a long name costs real
+airtime. Short names are only honoured when they are at least 3 characters and
+not an ordinary word (`ok`, `test`, `hey`, ...) - a cryptic 4-character name
+should not be woken by every passing message.
 
 Hermes wakes, answers, and the reply comes back over the air — split across as
 many frames as it needs, plain text, no markdown:

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = [
     "ChannelMatch",
@@ -28,7 +28,10 @@ __all__ = [
     "resolve_channel_match",
     "resolve_require_mention",
     "resolve_mention_gate",
+    "mention_trigger_names",
     "strip_mention",
+    "MIN_SHORT_NAME_LENGTH",
+    "SHORT_NAME_STOPWORDS",
 ]
 
 
@@ -144,37 +147,108 @@ def resolve_require_mention(
     return default
 
 
-def _mention_patterns(node_name: str) -> Tuple[re.Pattern, ...]:
-    """Addressing forms recognised for *node_name*.
+#: Short names below this many characters are ignored as mention triggers.
+#: Meshtastic short names are ~4 characters and frequently cryptic, so a
+#: 1-2 character name ("A", "K1") would fire on ordinary channel chatter.
+#: Raise or lower it if your mesh disagrees.
+MIN_SHORT_NAME_LENGTH = 3
 
-    Follows IRC's convention so behaviour is consistent across Hermes
-    platforms: ``@name``, ``name:`` and ``name,`` prefixes.
+#: Short names that are ordinary English words or common mesh chatter and
+#: would wake the agent constantly.  Compared case-insensitively.
+SHORT_NAME_STOPWORDS = frozenset(
+    {
+        "the", "and", "you", "yes", "no", "ok", "okay", "hi", "hey", "yo",
+        "all", "any", "for", "not", "who", "how", "why", "what", "when",
+        "sos", "cq", "qth", "test", "ping", "hello",
+    }
+)
+
+
+def _mention_pattern(name: str) -> re.Pattern:
+    """The addressing form recognised for *name*.
+
+    Meshtastic has no mention protocol.  Addressing a node on a channel is
+    just typing its name at the start of the message, so that is what this
+    matches: the name literally at position 0, case-insensitive, with an
+    optional leading ``@`` and optional trailing punctuation.  A trailing
+    word boundary keeps ``hermesbot`` from matching ``hermes``.
     """
-    escaped = re.escape(node_name)
-    return (
-        re.compile(rf"^\s*@{escaped}\b[\s,:]*", re.IGNORECASE),
-        re.compile(rf"^\s*{escaped}\s*[:,]\s*", re.IGNORECASE),
-    )
+    escaped = re.escape(name.strip())
+    return re.compile(rf"^\s*@?{escaped}(?![\w])[\s]*[:,]?[\s]*", re.IGNORECASE)
 
 
-def strip_mention(text: str, node_name: Optional[str]) -> Tuple[str, bool]:
-    """Remove an addressing prefix from *text*.
+def _is_usable_short_name(short_name: Optional[str], long_name: Optional[str]) -> bool:
+    """Whether *short_name* is safe to use as a mention trigger.
+
+    Short names collide with ordinary words far more readily than long
+    names do, and a false trigger costs real airtime.  A short name is
+    rejected when it is empty/whitespace, shorter than
+    ``MIN_SHORT_NAME_LENGTH``, or a known stopword.  It is also skipped
+    when it is identical to the long name, since the long-name pattern
+    already covers it.
+    """
+    if not isinstance(short_name, str):
+        return False
+    stripped = short_name.strip()
+    if not stripped:
+        return False
+    if len(stripped) < MIN_SHORT_NAME_LENGTH:
+        return False
+    if stripped.lower() in SHORT_NAME_STOPWORDS:
+        return False
+    if isinstance(long_name, str) and stripped.lower() == long_name.strip().lower():
+        return False
+    return True
+
+
+def mention_trigger_names(
+    node_name: Optional[str],
+    short_name: Optional[str] = None,
+    extra_names: Tuple[Optional[str], ...] = (),
+) -> Tuple[str, ...]:
+    """Every name that addressing the bot may use, longest first.
+
+    Longest-first matters: when a node's long name starts with its short
+    name, matching the long name first strips more of the prefix.  Empty
+    and duplicate names are dropped.
+    """
+    candidates: List[str] = []
+    for value in (node_name, *extra_names):
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip())
+    if _is_usable_short_name(short_name, node_name):
+        candidates.append(short_name.strip())  # type: ignore[union-attr]
+
+    seen = set()
+    unique: List[str] = []
+    for name in sorted(candidates, key=len, reverse=True):
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(name)
+    return tuple(unique)
+
+
+def strip_mention(
+    text: str,
+    node_name: Optional[str],
+    short_name: Optional[str] = None,
+    extra_names: Tuple[Optional[str], ...] = (),
+) -> Tuple[str, bool]:
+    """Remove a leading address from *text*.
 
     Returns ``(text_without_mention, was_mentioned)``.  Only a *leading*
-    address is stripped; a mid-sentence ``@name`` still counts as a mention
-    but is left in place so the agent sees the full message.
+    address counts — a name appearing mid-sentence is ordinary conversation
+    ("tell Long Name of Node I said hi"), not an instruction to the bot.
     """
-    if not text or not node_name:
+    if not text:
         return text, False
 
-    for pattern in _mention_patterns(node_name):
-        match = pattern.match(text)
+    for name in mention_trigger_names(node_name, short_name, extra_names):
+        match = _mention_pattern(name).match(text)
         if match:
             return text[match.end():].strip(), True
-
-    # Mentioned but not addressed at the start (e.g. "ping @bot please").
-    if re.search(rf"@{re.escape(node_name)}\b", text, re.IGNORECASE):
-        return text.strip(), True
 
     return text, False
 
@@ -185,6 +259,8 @@ def resolve_mention_gate(
     require_mention: bool,
     is_direct: bool = False,
     is_authorized_command: bool = False,
+    short_name: Optional[str] = None,
+    extra_names: Tuple[Optional[str], ...] = (),
 ) -> MentionGate:
     """Decide whether a message passes the mention gate.
 
@@ -195,10 +271,10 @@ def resolve_mention_gate(
     ceremony of a mention).
     """
     if is_direct:
-        cleaned, mentioned = strip_mention(text, node_name)
+        cleaned, mentioned = strip_mention(text, node_name, short_name, extra_names)
         return MentionGate(allowed=True, text=cleaned, was_mentioned=mentioned, reason="dm")
 
-    cleaned, mentioned = strip_mention(text, node_name)
+    cleaned, mentioned = strip_mention(text, node_name, short_name, extra_names)
 
     if not require_mention:
         return MentionGate(allowed=True, text=cleaned, was_mentioned=mentioned, reason="mention_not_required")

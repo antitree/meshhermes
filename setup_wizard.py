@@ -92,7 +92,10 @@ def interactive_setup() -> None:
     # ── Identity ──────────────────────────────────────────────────────────
     print()
     print_info("🏷️  Bot name on the mesh")
-    print_info("   Used to detect mentions on channels (e.g. '@Hermes status').")
+    print_info("   Meshtastic has no mention protocol: people address a node by")
+    print_info("   typing its name at the START of the message. Both 'Hermes status'")
+    print_info("   and '@Hermes status' work - the @ is optional, case does not")
+    print_info("   matter, and the radio's short name works too.")
     print_info("   Leave blank to use the radio's own long name.")
     print_info("   Note: this plugin never renames your radio — use the")
     print_info("   meshtastic CLI if you want to change the device name.")
