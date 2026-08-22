@@ -40,4 +40,4 @@ __all__ = [
     "post_install_message",
     "POST_INSTALL_MESSAGE",
 ]
-__version__ = "1.0.0"
+__version__ = "1.0.6"
