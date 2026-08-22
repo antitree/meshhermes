@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +259,25 @@ def get_my_node_num(iface: Any) -> Optional[int]:
         return int(num) if num is not None else None
     except Exception:
         return None
+
+
+def get_my_names(iface: Any) -> Tuple[Optional[str], Optional[str]]:
+    """The device's own ``(longName, shortName)``.
+
+    Both are mention triggers: typing a node's short name on a channel is
+    how people address it when airtime is expensive.  Read-only, like
+    :func:`get_my_long_name`.
+    """
+    try:
+        my_num = get_my_node_num(iface)
+        nodes = getattr(iface, "nodes", None) or {}
+        for node in nodes.values():
+            user = (node or {}).get("user") or {}
+            if my_num is not None and (node or {}).get("num") == my_num:
+                return user.get("longName"), user.get("shortName")
+    except Exception:
+        pass
+    return get_my_long_name(iface), None
 
 
 def get_my_long_name(iface: Any) -> Optional[str]:
