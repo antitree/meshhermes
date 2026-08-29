@@ -51,6 +51,7 @@ py-modules = [
     "setup_wizard",
     "mesh_tools",
     "transport",
+    "ipc",
 ]
 
 [tool.pytest.ini_options]

@@ -107,3 +107,19 @@ optional_env:
     description: "Rate-limit window in seconds (default 60)"
     prompt: "Rate limit: window (seconds)"
     password: false
+  # Generic local IPC for applications that use the gateway as a transport.
+  - name: MESHTASTIC_IPC_SOCKET
+    description: >-
+      Optional same-user Unix socket for a local application. When set, MeshHermes
+      forwards decoded text from the configured channel and accepts channel-pinned
+      send requests without opening another radio connection.
+    prompt: "Local application IPC socket path (or empty)"
+    password: false
+  - name: MESHTASTIC_IPC_CHANNEL
+    description: "Exact channel name exposed to local IPC applications; it must resolve to a configured radio channel."
+    prompt: "Local application IPC channel name"
+    password: false
+  - name: MESHTASTIC_IPC_MAX_MESSAGE_BYTES
+    description: "Maximum UTF-8 bytes accepted from local IPC applications (default 200)."
+    prompt: "Local application IPC message limit"
+    password: false

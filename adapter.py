@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from gateway.config import Platform
@@ -90,6 +92,11 @@ except ImportError:  # pragma: no cover - direct-import context
         resolve_tcp_port,
         validate_env,
     )
+
+try:
+    from . import ipc
+except ImportError:  # pragma: no cover - direct-import context
+    import ipc  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +186,26 @@ class MeshtasticAdapter(BasePlatformAdapter):
         self._region: Optional[str] = None
         self._subscribed = False
         self.nodedb = NodeDB()
+        # Optional generic application bridge.
+        self._ipc_socket = (
+            os.getenv("MESHTASTIC_IPC_SOCKET")
+            or str(extra.get("ipc_socket") or "")
+        ).strip()
+        self._ipc_channel_name = (
+            os.getenv("MESHTASTIC_IPC_CHANNEL")
+            or str(extra.get("ipc_channel") or "")
+        ).strip()
+        try:
+            self._ipc_max_bytes = int(
+                os.getenv("MESHTASTIC_IPC_MAX_MESSAGE_BYTES")
+                or extra.get("ipc_max_message_bytes", ipc.DEFAULT_MAX_MESSAGE_BYTES)
+            )
+        except (TypeError, ValueError):
+            self._ipc_max_bytes = ipc.DEFAULT_MAX_MESSAGE_BYTES
+        self._ipc_channel_index: Optional[int] = None
+        self._ipc_server: asyncio.AbstractServer | None = None
+        self._ipc_clients: set[asyncio.StreamWriter] = set()
+        self._ipc_write_lock = asyncio.Lock()
 
     @property
     def name(self) -> str:
@@ -346,6 +373,7 @@ class MeshtasticAdapter(BasePlatformAdapter):
             count = 0
 
         self._mark_connected()
+        await self._start_ipc()
         logger.info(
             "Meshtastic: connected via %s as %s (region %s, %d nodes)%s",
             self.transport,
@@ -358,12 +386,175 @@ class MeshtasticAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         """Unsubscribe and release the port.  Safe to call repeatedly."""
+        await self._stop_ipc()
         self._mark_disconnected()
         self._unsubscribe_all()
         iface, self._iface = self._iface, None
         # Always close, even on error paths: a held serial port makes the
         # gateway's next reconnect fail on a busy device.
         await tp.close_interface(iface)
+
+    # ── Generic local application IPC ────────────────────────────────────
+
+    async def _start_ipc(self) -> None:
+        """Expose this gateway's configured channel to local applications."""
+        if not self._ipc_socket or not self._ipc_channel_name:
+            return
+        if self._ipc_server is not None:
+            await self._stop_ipc()
+
+        channel_index = tp.channel_index_of(self._iface, self._ipc_channel_name)
+        if channel_index is None:
+            logger.error(
+                "Generic Meshtastic IPC disabled: channel %r is not configured",
+                self._ipc_channel_name,
+            )
+            return
+        if not 0 <= channel_index <= 7:
+            logger.error(
+                "Generic Meshtastic IPC disabled: channel %r has invalid index %s",
+                self._ipc_channel_name,
+                channel_index,
+            )
+            return
+        if self._ipc_max_bytes < 1 or self._ipc_max_bytes > MESHTASTIC_HARD_LIMIT:
+            logger.error(
+                "Generic Meshtastic IPC disabled: max message bytes must be between 1 and %d",
+                MESHTASTIC_HARD_LIMIT,
+            )
+            return
+
+        self._ipc_channel_index = channel_index
+        socket_path = Path(self._ipc_socket).expanduser()
+        socket_path.parent.mkdir(parents=True, exist_ok=True)
+        if socket_path.exists():
+            if not socket_path.is_socket():
+                logger.error("Generic Meshtastic IPC path is not a socket: %s", socket_path)
+                self._ipc_channel_index = None
+                return
+            socket_path.unlink()
+        self._ipc_server = await asyncio.start_unix_server(
+            self._handle_ipc_client, path=str(socket_path)
+        )
+        socket_path.chmod(0o660)
+        logger.info(
+            "Generic Meshtastic IPC ready at %s for %s index %d",
+            socket_path,
+            self._ipc_channel_name,
+            channel_index,
+        )
+
+    async def _stop_ipc(self) -> None:
+        server, self._ipc_server = self._ipc_server, None
+        if server is not None:
+            server.close()
+            await server.wait_closed()
+        clients, self._ipc_clients = self._ipc_clients, set()
+        for writer in clients:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+        if self._ipc_socket:
+            socket_path = Path(self._ipc_socket).expanduser()
+            if socket_path.is_socket():
+                socket_path.unlink()
+        self._ipc_channel_index = None
+
+    async def _write_ipc(self, writer: asyncio.StreamWriter, payload: dict[str, Any]) -> None:
+        async with self._ipc_write_lock:
+            writer.write((json.dumps(payload, separators=(",", ":")) + "\n").encode())
+            await writer.drain()
+
+    async def _handle_ipc_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        if self._ipc_channel_index is None:
+            writer.close()
+            await writer.wait_closed()
+            return
+        self._ipc_clients.add(writer)
+        try:
+            await self._write_ipc(
+                writer,
+                ipc.hello_payload(
+                    self.my_node_id,
+                    self._ipc_channel_name,
+                    self._ipc_channel_index,
+                ),
+            )
+            while True:
+                line = await reader.readline()
+                if not line:
+                    return
+                if len(line) > ipc.MAX_REQUEST_BYTES:
+                    await self._write_ipc(
+                        writer,
+                        {"type": "send_result", "version": ipc.PROTOCOL_VERSION,
+                         "ok": False, "error": "IPC request too large"},
+                    )
+                    return
+                try:
+                    request = json.loads(line)
+                except json.JSONDecodeError:
+                    await self._write_ipc(
+                        writer,
+                        {"type": "send_result", "version": ipc.PROTOCOL_VERSION,
+                         "ok": False, "error": "invalid JSON"},
+                    )
+                    continue
+                text, error = ipc.validate_send_request(
+                    request,
+                    channel_name=self._ipc_channel_name,
+                    channel_index=self._ipc_channel_index,
+                    max_bytes=self._ipc_max_bytes,
+                )
+                if error:
+                    await self._write_ipc(
+                        writer,
+                        {"type": "send_result", "version": ipc.PROTOCOL_VERSION,
+                         "ok": False, "error": error},
+                    )
+                    continue
+                result = await self.send(
+                    f"channel:{self._ipc_channel_name}",
+                    text or "",
+                )
+                await self._write_ipc(
+                    writer,
+                    {
+                        "type": "send_result",
+                        "version": ipc.PROTOCOL_VERSION,
+                        "ok": bool(result.success),
+                        **({} if result.success else {"error": result.error or "send failed"}),
+                    },
+                )
+        except (ConnectionError, asyncio.IncompleteReadError, OSError):
+            return
+        except Exception:
+            logger.exception("Generic Meshtastic IPC client failed")
+        finally:
+            self._ipc_clients.discard(writer)
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
+
+    async def _publish_ipc(self, inbound: dict[str, Any]) -> None:
+        channel_index = self._ipc_channel_index
+        if channel_index is None or inbound.get("is_dm") or inbound.get("channel") != channel_index:
+            return
+        payload = ipc.message_payload(inbound, self._ipc_channel_name, channel_index)
+        stale = []
+        for writer in tuple(self._ipc_clients):
+            try:
+                await self._write_ipc(writer, payload)
+            except Exception:
+                stale.append(writer)
+        for writer in stale:
+            self._ipc_clients.discard(writer)
 
     def _subscribe_all(self) -> None:
         if self._subscribed:
@@ -486,6 +677,14 @@ class MeshtasticAdapter(BasePlatformAdapter):
                 and self._my_node_num is not None
                 and int(to_num) == int(self._my_node_num)
             )
+
+            await self._publish_ipc({
+                "text": text,
+                "from_id": from_id,
+                "message_id": str(packet.get("id") or ""),
+                "is_dm": is_direct,
+                "channel": packet.get("channel", 0),
+            })
 
             node_record = self.nodedb.get_node(from_id) or {}
             user = node_record.get("user") or {}

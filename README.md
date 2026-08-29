@@ -55,6 +55,13 @@ The wizard is also how you change any of it later. The full list of settings is
 in [Environment variables](#environment-variables) below; setting those in
 `~/.hermes/.env` by hand is equivalent to running the wizard.
 
+## Local application IPC
+
+MeshHermes can expose one configured channel to a local application over a
+same-user Unix socket. This is a generic transport boundary: the application
+owns its own commands and state, while MeshHermes keeps ownership of the radio
+and transmit policy. See [Local Application IPC](docs/ipc.md).
+
 If the gateway starts before it has been configured, it stops with a message
 naming the missing variable and how to set it, rather than failing obscurely at
 the radio.
