@@ -21,12 +21,14 @@ limit is invalid, IPC stays disabled and the radio gateway continues normally.
 ## Protocol
 
 The socket uses newline-delimited UTF-8 JSON. The current protocol version is
-`1`.
+`1`; frames are bounded to 8192 bytes and the helper advertises a queue bound
+of 32. Requests should carry a unique `id`, and responses echo that id so a
+client can multiplex sends with application requests.
 
 The server sends one handshake after connection:
 
 ```json
-{"type":"hello","version":1,"node_id":"!aabbccdd","channel_name":"in.secure","channel_index":1}
+{"type":"hello","version":1,"node_id":"!aabbccdd","channel_name":"in.secure","channel_index":1,"capabilities":{"operations":["register","send","event.submit","event.schedule","personality.request","personality.proposal"]}}
 ```
 
 For each non-DM text message on the configured channel, the server sends:
@@ -38,7 +40,7 @@ For each non-DM text message on the configured channel, the server sends:
 Applications send text with an explicit channel identity:
 
 ```json
-{"op":"send","version":1,"text":"status reply","channel_name":"in.secure","channel_index":1}
+{"op":"send","id":"send-1","version":1,"text":"status reply","channel_name":"in.secure","channel_index":1}
 ```
 
 The server replies with a send result:
@@ -49,7 +51,9 @@ The server replies with a send result:
 
 Malformed requests, protocol mismatches, channel mismatches, and oversized
 messages are rejected. The gateway applies its normal transmit policy and
-airtime limits to accepted sends.
+airtime limits to accepted sends. Meshagatchi extends this contract in the
+Hermes plugin with event forwarding and personality request/response handling;
+the plugin is the live owner of that extension.
 
 ## Ownership
 

@@ -58,6 +58,11 @@ async def test_application_ipc_forwards_configured_channel(monkeypatch, tmp_path
         "node_id": "!11223344",
         "channel_name": "Emergency",
         "channel_index": 1,
+        "capabilities": {
+            "operations": ["register", "send", "event.submit", "event.schedule", "personality.request", "personality.proposal"],
+            "max_frame_bytes": 8192,
+            "max_queued_requests": 32,
+        },
     }
 
     writer.write((json.dumps({

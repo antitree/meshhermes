@@ -8,6 +8,11 @@ from typing import Any
 PROTOCOL_VERSION = 1
 DEFAULT_MAX_MESSAGE_BYTES = 200
 MAX_REQUEST_BYTES = 8192
+MAX_QUEUED_REQUESTS = 32
+OPERATIONS = (
+    "register", "send", "event.submit", "event.schedule",
+    "personality.request", "personality.proposal",
+)
 
 
 def hello_payload(node_id: str | None, channel_name: str, channel_index: int) -> dict[str, Any]:
@@ -17,6 +22,11 @@ def hello_payload(node_id: str | None, channel_name: str, channel_index: int) ->
         "node_id": node_id,
         "channel_name": channel_name,
         "channel_index": channel_index,
+        "capabilities": {
+            "operations": list(OPERATIONS),
+            "max_frame_bytes": MAX_REQUEST_BYTES,
+            "max_queued_requests": MAX_QUEUED_REQUESTS,
+        },
     }
 
 
@@ -30,7 +40,29 @@ def message_payload(inbound: dict[str, Any], channel_name: str, channel_index: i
         "channel_name": channel_name,
         "channel_index": channel_index,
         "is_self": False,
+        "version": PROTOCOL_VERSION,
     }
+
+
+def request_id(request: Any) -> str | None:
+    value = request.get("id") if isinstance(request, dict) else None
+    return value if isinstance(value, str) and 1 <= len(value) <= 96 else None
+
+
+def validate_envelope(request: Any, *, channel_name: str, channel_index: int) -> str | None:
+    if not isinstance(request, dict):
+        return "IPC request must be an object"
+    if request.get("version", PROTOCOL_VERSION) != PROTOCOL_VERSION:
+        return "unsupported IPC protocol version"
+    if request.get("channel_name") not in (None, channel_name):
+        return "channel name is not allowed"
+    if request.get("channel_index") not in (None, channel_index):
+        return "channel index is not allowed"
+    if request.get("op") not in OPERATIONS:
+        return "unsupported IPC operation"
+    if request.get("op") != "register" and request_id(request) is None:
+        return "request id is required"
+    return None
 
 
 def validate_send_request(
